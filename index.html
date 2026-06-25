@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>La mia Cantina</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:system-ui,-apple-system,sans-serif;background:#F0F4F8;color:#1A202C;min-height:100vh}
+  #root{max-width:780px;margin:0 auto;padding:14px 12px}
+  input,button{font-family:inherit}
+  button{cursor:pointer}
+</style>
+</head>
+<body>
+<div id="root"><div style="height:300px;display:flex;align-items:center;justify-content:center;font-size:14px;color:#718096">🏠 Caricamento cantina…</div></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+// ── SUPABASE CONFIG ───────────────────────────────────────────────────────────
+const SUPA_URL = "https://lbtnzhieolwlpgnsaffv.supabase.co";
+const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxidG56aGllb2x3bHBnbnNhZmZ2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg5NjYyNzAsImV4cCI6MjA2NDU0MjI3MH0.3HxmaJG2bPBX0j3o4fNKUMvVFfBzSb5RGfidT3OWRVE";
+
+async function sbFetch(path, opts={}) {
+  const res = await fetch(SUPA_URL + "/rest/v1/" + path, {
+    headers: {
+      "apikey": SUPA_KEY,
+      "Authorization": "Bearer " + SUPA_KEY,
+      "Content-Type": "application/json",
+      "Prefer": opts.prefer || "return=representation",
+      ...opts.headers
+    },
+    ...opts
+  });
+  if (!res.ok) { const e = await res.text(); throw new Error(e); }
+  const txt = await res.text();
+  return txt ? JSON.parse(txt) : null;
+}
+
+async function getBoxes() {
+  const rows = await sbFetch("boxes?select=*");
+  const result = {};
+  (rows||[]).forEach(r => { result[r.id] = { name: r.name, items: r.items||[] }; });
+  return result;
+}
+async function upsertBox(id, wall, row, col, name, items) {
+  await sbFetch("boxes", {
+    method: "POST",
+    prefer: "resolution=merge-duplicates,return=minimal",
+    headers: { "Prefer": "resolution=merge-duplicates,return=minimal" },
+    body: JSON.stringify({ id, wall, row_idx: row, col_idx: col, name, items, updated_at: new Date().toISOString() })
+  });
+}
+async function deleteBox(id) {
+  await sbFetch("boxes?id=eq." + encodeURIComponent(id), { method: "DELETE", prefer: "return=minimal", headers:{"Prefer":"return=minimal"} });
+}
+async function getCfg() {
+  const rows = await sbFetch("shelf_config?select=*");
+  if (!rows||!rows.length) return null;
+  const result = {};
+  rows.forEach(r => { result[r.wall] = { cols: r.cols, rows: r.rows }; });
+  return result;
+}
+async function updateCfg(wall, cols, rows) {
+  await sbFetch("shelf_config?wall=eq." + wall, {
+    method: "PATCH",
+    prefer: "return=minimal",
+    headers: { "Prefer": "return=minimal" },
+    body: JSON.stringify({ cols, rows })
+  });
+}
+
+// ── TOKENS ───────────────────────────────────────────────────────────────────
+const T = {
+  bg:"#F0F4F8", surface:"#FFFFFF", surfaceAlt:"#F7F9FC",
+  border:"#DDE3EC", borderHi:"#B0BCCF",
+  blue:"#3182CE", blueLight:"#EBF4FF", blueDark:"#2B6CB0",
+  orange:"#ED8936", orangeLight:"#FFFAF0",
+  text:"#1A202C", textMid:"#4A5568", textDim:"#718096", textMute:"#A0AEC0",
+  red:"#E53E3E", redLight:"#FFF5F5",
+  shadow:"0 1px 3px rgba(0,0,0,0.08),0 1px 2px rgba(0,0,0,0.05)",
+  shadowMd:"0 4px 12px rgba(0,0,0,0.10),0 2px 4px rgba(0,0,0,0.06)",
+  shadowLg:"0 10px 30px rgba(0,0,0,0.12)",
+};
+
+const BOX_PAL = [
+  {bg:"#DBEAFE",border:"#93C5FD",text:"#1E40AF"},
+  {bg:"#FEF3C7",border:"#FCD34D",text:"#92400E"},
+  {bg:"#D1FAE5",border:"#6EE7B7",text:"#065F46"},
+  {bg:"#FCE7F3",border:"#F9A8D4",text:"#9D174D"},
+  {bg:"#E0E7FF",border:"#A5B4FC",text:"#3730A3"},
+  {bg:"#FEE2E2",border:"#FCA5A5",text:"#991B1B"},
+  {bg:"#ECFDF5",border:"#A7F3D0",text:"#064E3B"},
+  {bg:"#FFF7ED",border:"#FED7AA",text:"#9A3412"},
+];
+function boxPal(name){ let h=0; for(const c of name) h=(h*31+c.charCodeAt(0))&0xffff; return BOX_PAL[h%BOX_PAL.length]; }
+
+const DEFAULT_CFG = { fondo:{cols:8,rows:2}, left:{cols:8,rows:6}, right:{cols:8,rows:3} };
+const WALL_META = {
+  fondo:{label:"Parete di fondo",icon:"🔵",dim:"6 m"},
+  left: {label:"Parete sinistra",icon:"🟠",dim:"2,5 m"},
+  right:{label:"Parete destra",  icon:"🟢",dim:"2,5 m"},
+};
+
+// ── 3D SCENE ─────────────────────────────────────────────────────────────────
+function Scene3D({boxes,cfg,onWall}){
+  const [hov,setHov]=useState(null);
+  const W=660,H=400,vpX=330,vpY=68,lX=20,rX=640,tY=16,bY=380,fL=198,fR=462;
+  function lerp(a,b,t){return a+(b-a)*t;}
+  function nBox(w){return Object.keys(boxes).filter(k=>k.startsWith(w+":")).length;}
+
+  function Post({x,y1,y2}){return(
+    <g>
+      <rect x={x-3} y={y1} width={6} height={y2-y1} fill="#B0BEC5" rx="1.5"/>
+      <rect x={x-1} y={y1} width={2} height={y2-y1} fill="#ECEFF1" opacity="0.7"/>
+      {Array.from({length:Math.floor((y2-y1)/20)},(_,i)=>(
+        <rect key={i} x={x-4} y={y1+16+i*20} width={8} height={2.5} fill="#90A4AE" rx="0.5"/>
+      ))}
+    </g>
+  );}
+
+  function Board({x,y,w,h}){return(
+    <g>
+      <rect x={x} y={y+h} width={w} height={5} fill="#C8892A" opacity="0.6"/>
+      <rect x={x} y={y} width={w} height={h} fill="#F4A942" stroke="#D4892A" strokeWidth="0.8"/>
+      <rect x={x} y={y} width={w} height={3} fill="#FBBF5A" opacity="0.8"/>
+      {Array.from({length:Math.floor(w/8)},(_,i)=>(
+        <line key={i} x1={x+i*8} y1={y} x2={x+i*8} y2={y+h} stroke="#D4892A" strokeWidth="0.4" opacity="0.5"/>
+      ))}
+    </g>
+  );}
+
+  function Box3D({bx,by,bw,bh,name}){
+    const p=boxPal(name);
+    const nm=name.length>6?name.slice(0,5)+"…":name;
+    const lw=Math.min(bw-6,bw*0.82),lh=Math.min(bh*0.38,13);
+    return(
+      <g>
+        <rect x={bx+2} y={by+3} width={bw} height={bh} fill="rgba(0,0,0,0.08)" rx="3"/>
+        <rect x={bx} y={by} width={bw} height={bh} fill={p.bg} stroke={p.border} strokeWidth="1.2" rx="3"/>
+        <rect x={bx} y={by} width={bw} height={3.5} fill="rgba(255,255,255,0.6)" rx="3"/>
+        <rect x={bx+(bw-lw)/2} y={by+(bh-lh)/2} width={lw} height={lh} fill="rgba(255,255,255,0.75)" stroke={p.border} strokeWidth="0.5" rx="2"/>
+        <text x={bx+bw/2} y={by+(bh-lh)/2+lh/2+4} textAnchor="middle" fill={p.text} fontSize="7" fontWeight="700">{nm}</text>
+      </g>
+    );
+  }
+
+  function LeftWall(){
+    const rows=cfg.left.rows,cols=cfg.left.cols;
+    const wallH=bY-tY-32,rowH=wallH/(rows+0.4),slotW=(fL-lX)/cols,nUp=Math.min(cols+1,5);
+    return(<g>
+      {Array.from({length:nUp+1},(_,i)=><Post key={i} x={lerp(lX,fL,i/nUp)} y1={tY+32} y2={bY-2}/>)}
+      {Array.from({length:rows+1},(_,r)=><Board key={r} x={lX+3} y={tY+32+rowH*(r+0.2)} w={fL-lX-6} h={7}/>)}
+      {Array.from({length:rows},(_,r)=>Array.from({length:cols},(_,c)=>{
+        const k=`left:${r}:${c}`;const box=boxes[k];if(!box)return null;
+        const sy=tY+32+rowH*(r+0.2)+7,ny=tY+32+rowH*(r+1+0.2);
+        const avH=ny-sy-4,bh=Math.max(Math.min(avH*0.82,avH-2),9);
+        const bw=slotW*0.76,bx=lX+slotW*c+slotW*0.12,by=ny-bh-3;
+        return <Box3D key={k} bx={bx} by={by} bw={bw} bh={bh} name={box.name}/>;
+      }))}
+    </g>);
+  }
+
+  function RightWall(){
+    const rows=cfg.right.rows,cols=cfg.right.cols;
+    const wallH=bY-tY-32,rowH=wallH/(rows+0.4),slotW=(rX-fR)/cols,nUp=Math.min(cols+1,5);
+    return(<g>
+      {Array.from({length:nUp+1},(_,i)=><Post key={i} x={lerp(fR,rX,i/nUp)} y1={tY+32} y2={bY-2}/>)}
+      {Array.from({length:rows+1},(_,r)=><Board key={r} x={fR+3} y={tY+32+rowH*(r+0.2)} w={rX-fR-6} h={7}/>)}
+      {Array.from({length:rows},(_,r)=>Array.from({length:cols},(_,c)=>{
+        const k=`right:${r}:${c}`;const box=boxes[k];if(!box)return null;
+        const sy=tY+32+rowH*(r+0.2)+7,ny=tY+32+rowH*(r+1+0.2);
+        const avH=ny-sy-4,bh=Math.max(Math.min(avH*0.82,avH-2),9);
+        const bw=slotW*0.76,bx=fR+slotW*c+slotW*0.12,by=ny-bh-3;
+        return <Box3D key={k} bx={bx} by={by} bw={bw} bh={bh} name={box.name}/>;
+      }))}
+    </g>);
+  }
+
+  function FondoWall(){
+    const rows=cfg.fondo.rows,cols=cfg.fondo.cols,totH=bY-vpY,rowH=totH/(rows+0.4),nUp=Math.min(cols+1,5);
+    return(<g>
+      {Array.from({length:nUp+1},(_,i)=>{
+        const t=i/nUp,ux=lerp(fL,fR,t),sc=0.18;
+        return <Post key={i} x={ux} y1={lerp(vpY,bY,sc)} y2={bY-2}/>;
+      })}
+      {Array.from({length:rows+1},(_,r)=>{
+        const t=(r+0.2)/(rows+0.4),sc=Math.pow(t,0.62);
+        const py=vpY+totH*t,px1=lerp(vpX,fL,sc),px2=lerp(vpX,fR,sc);
+        return <Board key={r} x={px1} y={py} w={px2-px1} h={5}/>;
+      })}
+      {Array.from({length:rows},(_,r)=>Array.from({length:cols},(_,c)=>{
+        const k=`fondo:${r}:${c}`;const box=boxes[k];if(!box)return null;
+        const t2=(r+1+0.2)/(rows+0.4),sc2=Math.pow(t2,0.62);
+        const py1=vpY+totH*(r+0.2)/(rows+0.4)+5,py2=vpY+totH*t2;
+        const px1=lerp(vpX,fL,sc2),px2=lerp(vpX,fR,sc2),slotW=(px2-px1)/cols;
+        const avH=py2-py1-4,bh=Math.max(Math.min(avH*0.8,avH-2),8);
+        const bw=slotW*0.74,bx=px1+slotW*c+slotW*0.13,by=py2-bh-2;
+        return <Box3D key={k} bx={bx} by={by} bw={bw} bh={bh} name={box.name}/>;
+      }))}
+    </g>);
+  }
+
+  const zones=[
+    {id:"left", pts:[[lX,bY],[fL,bY],[vpX,vpY],[lX,tY]],lx:82, ly:bY-64,label:"SINISTRA"},
+    {id:"right",pts:[[rX,bY],[fR,bY],[vpX,vpY],[rX,tY]],lx:578,ly:bY-64,label:"DESTRA"},
+    {id:"fondo",pts:[[fL,bY],[fR,bY],[vpX,vpY]],         lx:vpX,ly:vpY+82,label:"FONDO"},
+  ];
+
+  return(
+    <svg viewBox={`0 0 ${W} ${H}`} style={{display:"block",width:"100%",borderRadius:16}}>
+      <defs>
+        <pattern id="wallL" width="48" height="24" patternUnits="userSpaceOnUse">
+          <rect width="48" height="24" fill="#E8EDF5"/>
+          <rect width="48" height="24" fill="none" stroke="#D4DAE8" strokeWidth="0.5"/>
+          <rect x="0" y="0" width="24" height="12" fill="none" stroke="#D4DAE8" strokeWidth="0.4"/>
+          <rect x="24" y="12" width="24" height="12" fill="none" stroke="#D4DAE8" strokeWidth="0.4"/>
+        </pattern>
+        <pattern id="wallR" width="48" height="24" patternUnits="userSpaceOnUse">
+          <rect width="48" height="24" fill="#DEE4EF"/>
+          <rect width="48" height="24" fill="none" stroke="#C8D0E0" strokeWidth="0.5"/>
+          <rect x="0" y="0" width="24" height="12" fill="none" stroke="#C8D0E0" strokeWidth="0.4"/>
+          <rect x="24" y="12" width="24" height="12" fill="none" stroke="#C8D0E0" strokeWidth="0.4"/>
+        </pattern>
+        <pattern id="wallF" width="48" height="24" patternUnits="userSpaceOnUse">
+          <rect width="48" height="24" fill="#D8E0EE"/>
+          <rect width="48" height="24" fill="none" stroke="#C0CADE" strokeWidth="0.4"/>
+        </pattern>
+        <pattern id="floorP" width="60" height="60" patternUnits="userSpaceOnUse">
+          <rect width="60" height="60" fill="#CDD5E0"/>
+          <rect width="60" height="60" fill="none" stroke="#BCC6D6" strokeWidth="1"/>
+          <rect x="0" y="0" width="30" height="30" fill="#D4DCE8" opacity="0.4"/>
+          <rect x="30" y="30" width="30" height="30" fill="#D4DCE8" opacity="0.4"/>
+        </pattern>
+        <filter id="ws"><feDropShadow dx="2" dy="2" stdDeviation="3" floodOpacity="0.1"/></filter>
+        <linearGradient id="cg" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor="#B0BEC5"/><stop offset="100%" stopColor="#CFD8DC"/>
+        </linearGradient>
+        <radialGradient id="lg" cx="50%" cy="100%" r="50%">
+          <stop offset="0%" stopColor="#FFF9C4" stopOpacity="0.5"/>
+          <stop offset="100%" stopColor="#FFF9C4" stopOpacity="0"/>
+        </radialGradient>
+      </defs>
+      <rect width={W} height={H} fill="#F0F4F8"/>
+      <polygon points={zones[0].pts.map(p=>p.join(",")).join(" ")} fill="url(#wallL)" stroke="#C8D0E0" strokeWidth="1"/>
+      <polygon points={zones[1].pts.map(p=>p.join(",")).join(" ")} fill="url(#wallR)" stroke="#C8D0E0" strokeWidth="1"/>
+      <polygon points={zones[2].pts.map(p=>p.join(",")).join(" ")} fill="url(#wallF)" stroke="#B8C4D4" strokeWidth="1"/>
+      <polygon points={`${lX},${bY} ${fL},${bY} ${fR},${bY} ${rX},${bY} ${rX},${H} ${lX},${H}`} fill="url(#floorP)"/>
+      <line x1={lX} y1={bY} x2={rX} y2={bY} stroke="#A0AEBE" strokeWidth="2"/>
+      <rect x={lX} y={tY} width={rX-lX} height={34} fill="url(#cg)"/>
+      <line x1={lX} y1={tY+34} x2={rX} y2={tY+34} stroke="#90A4AE" strokeWidth="1.5"/>
+      <ellipse cx={vpX} cy={tY+44} rx={140} ry={30} fill="url(#lg)"/>
+      <rect x={vpX-3} y={tY+6} width={6} height={26} fill="#90A4AE" rx="2"/>
+      <rect x={vpX-60} y={tY+32} width={120} height={14} fill="#FFFDE7" rx="4" stroke="#F9A825" strokeWidth="1"/>
+      <rect x={vpX-56} y={tY+33} width={112} height={5} fill="rgba(255,255,255,0.7)" rx="3"/>
+      {[[lX,tY],[rX,tY],[lX,bY],[rX,bY]].map(([x,y],i)=>(
+        <line key={i} x1={x} y1={y} x2={vpX} y2={vpY} stroke="#B0BCCF" strokeWidth="0.7"/>
+      ))}
+      <LeftWall/><RightWall/><FondoWall/>
+      {zones.map(({id,pts,lx,ly,label})=>{
+        const n=nBox(id),isH=hov===id,ptsStr=pts.map(p=>p.join(",")).join(" ");
+        const chipW=n>0?94:80;
+        return(
+          <g key={id} style={{cursor:"pointer"}}
+             onMouseEnter={()=>setHov(id)} onMouseLeave={()=>setHov(null)}
+             onClick={()=>onWall(id)}>
+            <polygon points={ptsStr} fill={isH?"rgba(49,130,206,0.08)":"transparent"} stroke={isH?T.blue:"transparent"} strokeWidth="2"/>
+            <rect x={lx-chipW/2} y={ly-16} width={chipW} height={30} rx="15"
+              fill={isH?T.blue:"white"} stroke={isH?T.blue:T.border} strokeWidth="1.5" filter="url(#ws)"/>
+            <text x={lx-(n>0?9:0)} y={ly+5} textAnchor="middle"
+              fill={isH?"white":T.textMid} fontSize="10" fontWeight="700" letterSpacing="0.06em">{label}</text>
+            {n>0&&(<>
+              <rect x={lx+chipW/2-26} y={ly-12} width={22} height={22} rx="11" fill={isH?"rgba(255,255,255,0.25)":T.orange}/>
+              <text x={lx+chipW/2-15} y={ly+5} textAnchor="middle" fill="white" fontSize="9.5" fontWeight="700">{n}</text>
+            </>)}
+          </g>
+        );
+      })}
+      <text x={W/2} y={H-8} textAnchor="middle" fill={T.textMute} fontSize="10">clicca su una parete per aprirla</text>
+    </svg>
+  );
+}
+
+// ── WALL GRID ─────────────────────────────────────────────────────────────────
+function WallGrid({wall,cfgW,boxes,searchKeys,onSlot}){
+  const {rows,cols}=cfgW;
+  function rowLbl(r){const i=rows-1-r;return i===0?"T":`R${i}`;}
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+      {Array.from({length:rows},(_,r)=>(
+        <div key={r} style={{display:"flex",alignItems:"center",gap:6}}>
+          <span style={{fontFamily:"monospace",fontSize:10,color:T.textMute,width:18,textAlign:"right",flexShrink:0,fontWeight:600}}>{rowLbl(r)}</span>
+          <div style={{height:1,width:8,background:T.border,flexShrink:0}}/>
+          <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+            {Array.from({length:cols},(_,c)=>{
+              const k=`${wall}:${r}:${c}`,box=boxes[k],isHL=searchKeys.includes(k);
+              const p=box?boxPal(box.name):null;
+              return(
+                <div key={c} onClick={()=>onSlot(k,wall,r,c)} title={box?box.name:"Aggiungi scatola"}
+                  style={{width:52,height:52,borderRadius:10,cursor:"pointer",
+                    border:isHL?`2px solid ${T.red}`:box?`1.5px solid ${p.border}`:`1.5px dashed ${T.borderHi}`,
+                    background:isHL?T.redLight:box?p.bg:T.surfaceAlt,
+                    display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+                    position:"relative",transition:"all 0.12s",boxShadow:box?T.shadow:"none"}}
+                  onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=T.shadowMd;}}
+                  onMouseLeave={e=>{e.currentTarget.style.transform="";e.currentTarget.style.boxShadow=box?T.shadow:"none";}}>
+                  {box?(
+                    <>
+                      <span style={{fontSize:8,fontWeight:700,color:p.text,textAlign:"center",lineHeight:1.2,padding:"0 3px",wordBreak:"break-word",maxWidth:48}}>
+                        {box.name.length>9?box.name.slice(0,8)+"…":box.name}
+                      </span>
+                      {box.items.length>0&&<span style={{position:"absolute",top:3,right:4,fontSize:8,color:T.orange,fontWeight:700}}>{box.items.length}</span>}
+                    </>
+                  ):(
+                    <span style={{color:T.textMute,fontSize:20,lineHeight:1,fontWeight:300}}>+</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── BOX MODAL ─────────────────────────────────────────────────────────────────
+function BoxModal({slotKey,wall,row,col,box,cfgW,onSave,onDelete,onClose,saving}){
+  const [name,setName]=useState(box?.name||"");
+  const [items,setItems]=useState(box?.items?[...box.items]:[]);
+  const [newItem,setNewItem]=useState("");
+  const inputRef=useRef(null);
+  useEffect(()=>{setTimeout(()=>inputRef.current?.focus(),60);},[]);
+  const rows=cfgW?.rows||3,ri=rows-1-parseInt(row);
+  const pos=`${WALL_META[wall]?.label} · ${ri===0?"Piano terra":"Ripiano "+ri} · col. ${parseInt(col)+1}`;
+  function addItem(){const v=newItem.trim();if(!v)return;setItems(p=>[...p,v]);setNewItem("");}
+  const pal=name?boxPal(name):BOX_PAL[0];
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(26,32,44,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16,backdropFilter:"blur(4px)"}}>
+      <div style={{background:T.surface,borderRadius:20,padding:28,width:380,maxWidth:"100%",maxHeight:"88vh",overflowY:"auto",boxShadow:T.shadowLg,display:"flex",flexDirection:"column",gap:18}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <div style={{width:42,height:42,borderRadius:10,background:pal.bg,border:`2px solid ${pal.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>📦</div>
+            <div>
+              <div style={{fontSize:16,fontWeight:700,color:T.text}}>{box?"Modifica scatola":"Nuova scatola"}</div>
+              <div style={{fontSize:11,color:T.textDim}}>Cantina</div>
+            </div>
+          </div>
+          <button onClick={onClose} style={{width:32,height:32,borderRadius:"50%",border:`1px solid ${T.border}`,background:T.surfaceAlt,fontSize:18,color:T.textDim,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:6,padding:"8px 12px",background:T.blueLight,borderRadius:10,border:"1px solid #BEE3F8"}}>
+          <span>📍</span><span style={{fontSize:11,color:T.blueDark,fontWeight:500}}>{pos}</span>
+        </div>
+        <div>
+          <label style={{fontSize:12,fontWeight:600,color:T.textMid,display:"block",marginBottom:6}}>Nome scatola</label>
+          <input ref={inputRef} value={name} onChange={e=>setName(e.target.value)} placeholder="es. Attrezzi, Natale, Vestiti…" maxLength={30}
+            style={{width:"100%",padding:"10px 14px",border:`1.5px solid ${T.border}`,borderRadius:10,fontSize:14,background:T.bg,color:T.text,outline:"none"}}
+            onFocus={e=>e.target.style.borderColor=T.blue} onBlur={e=>e.target.style.borderColor=T.border}/>
+        </div>
+        <div>
+          <label style={{fontSize:12,fontWeight:600,color:T.textMid,display:"block",marginBottom:6}}>
+            Contenuto
+            {items.length>0&&<span style={{marginLeft:8,padding:"2px 8px",background:T.orange,color:"white",borderRadius:20,fontSize:10,fontWeight:700}}>{items.length}</span>}
+          </label>
+          <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:170,overflowY:"auto",marginBottom:8}}>
+            {items.length===0?(
+              <div style={{fontSize:12,color:T.textMute,textAlign:"center",padding:"14px 0",border:`1.5px dashed ${T.border}`,borderRadius:10}}>Nessun oggetto — aggiungine uno sotto</div>
+            ):items.map((it,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:T.surfaceAlt,borderRadius:9,border:`1px solid ${T.border}`}}>
+                <span style={{width:6,height:6,borderRadius:"50%",background:T.orange,flexShrink:0}}/>
+                <span style={{flex:1,fontSize:13,color:T.text}}>{it}</span>
+                <button onClick={()=>setItems(p=>p.filter((_,j)=>j!==i))}
+                  style={{background:"none",border:"none",color:T.textMute,fontSize:16,lineHeight:1,padding:0}}
+                  onMouseEnter={e=>e.target.style.color=T.red} onMouseLeave={e=>e.target.style.color=T.textMute}>×</button>
+              </div>
+            ))}
+          </div>
+          <div style={{display:"flex",gap:6}}>
+            <input value={newItem} onChange={e=>setNewItem(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addItem()}
+              placeholder="Aggiungi oggetto…" maxLength={60}
+              style={{flex:1,padding:"9px 12px",border:`1.5px solid ${T.border}`,borderRadius:9,fontSize:13,background:T.bg,color:T.text,outline:"none"}}
+              onFocus={e=>e.target.style.borderColor=T.blue} onBlur={e=>e.target.style.borderColor=T.border}/>
+            <button onClick={addItem} style={{padding:"9px 16px",borderRadius:9,border:`1.5px solid ${T.border}`,background:T.blue,color:"white",fontSize:20,lineHeight:1}}>+</button>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:8,paddingTop:4}}>
+          <button onClick={()=>{if(!name.trim())return;onSave(slotKey,wall,parseInt(row),parseInt(col),name.trim(),items);}}
+            disabled={!name.trim()||saving}
+            style={{flex:1,padding:"11px",borderRadius:11,border:"none",background:name.trim()&&!saving?T.blue:"#CBD5E0",cursor:name.trim()&&!saving?"pointer":"not-allowed",fontSize:14,fontWeight:700,color:"white"}}>
+            {saving?"Salvataggio…":"💾 Salva"}
+          </button>
+          {box&&(
+            <button onClick={()=>onDelete(slotKey)} disabled={saving}
+              style={{padding:"11px 16px",borderRadius:11,border:`1.5px solid ${T.border}`,background:T.surfaceAlt,color:T.red}}
+              onMouseEnter={e=>{e.currentTarget.style.background=T.redLight;}} onMouseLeave={e=>{e.currentTarget.style.background=T.surfaceAlt;}}>🗑</button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── CFG PANEL ─────────────────────────────────────────────────────────────────
+function CfgPanel({cfg,onApply,onClose,saving}){
+  const [vals,setVals]=useState({fondo:{...cfg.fondo},left:{...cfg.left},right:{...cfg.right}});
+  const set=(w,k,v)=>setVals(p=>({...p,[w]:{...p[w],[k]:Math.max(1,Math.min(k==="cols"?20:10,parseInt(v)||1))}}));
+  return(
+    <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:16,padding:20,marginBottom:12,boxShadow:T.shadowMd}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+        <span style={{fontSize:14,fontWeight:700,color:T.text}}>⚙️ Configura scaffali</span>
+        <button onClick={onClose} style={{width:28,height:28,borderRadius:"50%",border:`1px solid ${T.border}`,background:T.surfaceAlt,fontSize:16,color:T.textDim}}>×</button>
+      </div>
+      <div style={{fontSize:11,color:T.textDim,background:T.blueLight,borderRadius:8,padding:"7px 10px",border:"1px solid #BEE3F8",marginBottom:14}}>
+        ℹ️ Modificare le dimensioni non cancella le scatole già inserite.
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:16}}>
+        {["fondo","left","right"].map(w=>(
+          <div key={w} style={{background:T.surfaceAlt,border:`1px solid ${T.border}`,borderRadius:12,padding:12}}>
+            <div style={{fontSize:11,fontWeight:700,color:T.textMid,marginBottom:10}}>{WALL_META[w].label}</div>
+            {[["cols","Colonne"],["rows","Ripiani"]].map(([k,lbl])=>(
+              <div key={k} style={{marginBottom:8}}>
+                <label style={{fontSize:10,color:T.textDim,display:"block",marginBottom:4}}>{lbl}</label>
+                <input type="number" value={vals[w][k]} min={1} max={k==="cols"?20:10} onChange={e=>set(w,k,e.target.value)}
+                  style={{width:"100%",padding:"5px 8px",border:`1.5px solid ${T.border}`,borderRadius:7,fontSize:13,color:T.text,background:T.surface,textAlign:"center",fontFamily:"monospace",outline:"none"}}
+                  onFocus={e=>e.target.style.borderColor=T.blue} onBlur={e=>e.target.style.borderColor=T.border}/>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+        <button onClick={onClose} style={{padding:"8px 16px",borderRadius:9,border:`1px solid ${T.border}`,background:T.surfaceAlt,fontSize:13,color:T.textMid}}>Annulla</button>
+        <button onClick={()=>onApply(vals)} disabled={saving}
+          style={{padding:"8px 20px",borderRadius:9,border:"none",background:saving?"#CBD5E0":T.blue,cursor:saving?"not-allowed":"pointer",fontSize:13,fontWeight:700,color:"white"}}>
+          {saving?"Salvataggio…":"Applica"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── TOAST ─────────────────────────────────────────────────────────────────────
+function Toast({msg,type}){
+  if(!msg)return null;
+  const bg=type==="error"?"#FFF5F5":type==="ok"?"#F0FFF4":"#EBF4FF";
+  const border=type==="error"?T.red:type==="ok"?T.green:"#BEE3F8";
+  const color=type==="error"?T.red:type==="ok"?"#276749":T.blueDark;
+  return(
+    <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:bg,border:`1px solid ${border}`,color,borderRadius:12,padding:"10px 20px",fontSize:13,fontWeight:600,boxShadow:T.shadowMd,zIndex:2000,whiteSpace:"nowrap"}}>
+      {msg}
+    </div>
+  );
+}
+
+// ── MAIN APP ──────────────────────────────────────────────────────────────────
+function App(){
+  const [boxes,setBoxes]=useState({});
+  const [cfg,setCfg]=useState(DEFAULT_CFG);
+  const [view,setView]=useState("3d");
+  const [modal,setModal]=useState(null);
+  const [query,setQuery]=useState("");
+  const [showCfg,setShowCfg]=useState(false);
+  const [loaded,setLoaded]=useState(false);
+  const [saving,setSaving]=useState(false);
+  const [toast,setToast]=useState(null);
+
+  function showToast(msg,type="ok"){
+    setToast({msg,type});
+    setTimeout(()=>setToast(null),2500);
+  }
+
+  useEffect(()=>{
+    (async()=>{
+      try{
+        const [b,c]=await Promise.all([getBoxes(),getCfg()]);
+        if(b)setBoxes(b);
+        if(c)setCfg(p=>({fondo:{...p.fondo,...c.fondo},left:{...p.left,...c.left},right:{...p.right,...c.right}}));
+      }catch(e){
+        showToast("Errore connessione Supabase","error");
+      }
+      setLoaded(true);
+    })();
+  },[]);
+
+  async function handleSaveBox(k,wall,row,col,name,items){
+    setSaving(true);
+    try{
+      await upsertBox(k,wall,row,col,name,items);
+      setBoxes(p=>({...p,[k]:{name,items}}));
+      setModal(null);
+      showToast("✅ Scatola salvata");
+    }catch(e){showToast("Errore nel salvataggio","error");}
+    setSaving(false);
+  }
+
+  async function handleDeleteBox(k){
+    setSaving(true);
+    try{
+      await deleteBox(k);
+      setBoxes(p=>{const n={...p};delete n[k];return n;});
+      setModal(null);
+      showToast("🗑 Scatola eliminata");
+    }catch(e){showToast("Errore nell'eliminazione","error");}
+    setSaving(false);
+  }
+
+  async function handleApplyCfg(vals){
+    setSaving(true);
+    try{
+      await Promise.all(["fondo","left","right"].map(w=>updateCfg(w,vals[w].cols,vals[w].rows)));
+      setCfg(vals);
+      setShowCfg(false);
+      showToast("✅ Scaffali aggiornati");
+    }catch(e){showToast("Errore nel salvataggio configurazione","error");}
+    setSaving(false);
+  }
+
+  // search
+  const searchKeys=[];
+  const searchResults=[];
+  if(query.trim()){
+    const t=query.toLowerCase();
+    Object.entries(boxes).forEach(([k,box])=>{
+      const inN=box.name.toLowerCase().includes(t);
+      const mi=box.items.filter(it=>it.toLowerCase().includes(t));
+      if(inN||mi.length){
+        searchKeys.push(k);
+        const [wall,r,c]=k.split(":");
+        const rows=cfg[wall]?.rows||3,ri=rows-1-parseInt(r);
+        const loc=`${WALL_META[wall]?.label}, ${ri===0?"Terra":"R"+ri}, col.${parseInt(c)+1}`;
+        searchResults.push({k,box,loc,mi});
+      }
+    });
+  }
+
+  const totalBoxes=Object.keys(boxes).length;
+  const modalBox=modal?boxes[modal.key]||null:null;
+
+  if(!loaded)return(
+    <div style={{height:300,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,color:T.textDim,gap:10}}>
+      <span style={{fontSize:24}}>🏠</span> Caricamento cantina…
+    </div>
+  );
+
+  return(
+    <div style={{background:T.bg,minHeight:"100vh",fontFamily:"system-ui,sans-serif",color:T.text,padding:"14px 0"}}>
+
+      {/* HEADER */}
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,padding:"12px 16px",background:T.surface,borderRadius:14,boxShadow:T.shadow}}>
+        <div style={{width:40,height:40,borderRadius:10,background:"linear-gradient(135deg,#3182CE,#63B3ED)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>🏠</div>
+        <div style={{flex:1}}>
+          <div style={{fontSize:16,fontWeight:800,color:T.text}}>La mia cantina</div>
+          <div style={{fontSize:11,color:T.textDim}}>{totalBoxes} scatole catalogate</div>
+        </div>
+        {view!=="3d"&&(
+          <button onClick={()=>setView("3d")}
+            style={{display:"flex",alignItems:"center",gap:5,padding:"7px 13px",borderRadius:9,border:`1.5px solid ${T.border}`,background:T.surfaceAlt,fontSize:12,fontWeight:600,color:T.textMid}}>← 3D</button>
+        )}
+        <button onClick={()=>setShowCfg(v=>!v)}
+          style={{display:"flex",alignItems:"center",gap:5,padding:"7px 13px",borderRadius:9,border:`1.5px solid ${showCfg?T.blue:T.border}`,background:showCfg?T.blueLight:T.surfaceAlt,fontSize:12,fontWeight:600,color:showCfg?T.blue:T.textMid}}>⚙️</button>
+      </div>
+
+      {/* SEARCH */}
+      <div style={{position:"relative",marginBottom:query.trim()?8:12}}>
+        <span style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",fontSize:15,color:T.textMute,pointerEvents:"none"}}>🔍</span>
+        <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Cerca un oggetto o una scatola…"
+          style={{width:"100%",padding:"10px 14px 10px 40px",border:`1.5px solid ${T.border}`,borderRadius:12,fontSize:13,background:T.surface,color:T.text,outline:"none",boxShadow:T.shadow}}
+          onFocus={e=>e.target.style.borderColor=T.blue} onBlur={e=>e.target.style.borderColor=T.border}/>
+        {query&&<button onClick={()=>setQuery("")} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:T.textMute,fontSize:18,lineHeight:1}}>×</button>}
+      </div>
+
+      {/* SEARCH RESULTS */}
+      {query.trim()&&(
+        <div style={{marginBottom:12,padding:"10px 14px",background:T.surface,borderRadius:12,border:`1px solid ${T.border}`,boxShadow:T.shadow}}>
+          {searchResults.length===0?(
+            <span style={{fontSize:12,color:T.textMute}}>Nessun risultato per "<b>{query}</b>"</span>
+          ):(
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <div style={{fontSize:11,fontWeight:700,color:T.textDim,marginBottom:2}}>{searchResults.length} risultat{searchResults.length===1?"o":"i"}</div>
+              {searchResults.map(r=>{
+                const [wall]=r.k.split(":");const p=boxPal(r.box.name);
+                return(
+                  <div key={r.k} onClick={()=>{setView(wall);const[,row,col]=r.k.split(":");setModal({key:r.k,wall,row:parseInt(row),col:parseInt(col)});}}
+                    style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",background:T.surfaceAlt,borderRadius:9,cursor:"pointer",border:`1px solid ${T.border}`,transition:"all 0.12s"}}
+                    onMouseEnter={e=>{e.currentTarget.style.borderColor=T.blue;e.currentTarget.style.background=T.blueLight;}}
+                    onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.background=T.surfaceAlt;}}>
+                    <div style={{width:28,height:28,borderRadius:7,background:p.bg,border:`1.5px solid ${p.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,flexShrink:0}}>📦</div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:13,fontWeight:700,color:T.text}}>{r.box.name}</div>
+                      {r.mi.length>0&&<div style={{fontSize:11,color:T.textDim,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>→ {r.mi.join(", ")}</div>}
+                    </div>
+                    <div style={{fontSize:10,color:T.textDim,textAlign:"right",flexShrink:0}}>{r.loc}</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {showCfg&&<CfgPanel cfg={cfg} onApply={handleApplyCfg} onClose={()=>setShowCfg(false)} saving={saving}/>}
+
+      {/* WALL TABS */}
+      {view!=="3d"&&(
+        <div style={{display:"flex",gap:6,marginBottom:10}}>
+          {["left","fondo","right"].map(w=>{
+            const active=view===w;
+            return(
+              <button key={w} onClick={()=>setView(w)}
+                style={{flex:1,padding:"8px 10px",borderRadius:10,border:`1.5px solid ${active?T.blue:T.border}`,background:active?T.blue:T.surface,fontSize:12,fontWeight:active?700:500,color:active?"white":T.textMid,transition:"all 0.15s"}}>
+                {WALL_META[w].label.split(" ").slice(1).join(" ")}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* MAIN */}
+      <div style={{background:T.surface,borderRadius:16,overflow:"hidden",boxShadow:T.shadow,border:`1px solid ${T.border}`}}>
+        {view==="3d"?(
+          <Scene3D boxes={boxes} cfg={cfg} onWall={w=>setView(w)}/>
+        ):(
+          <div style={{padding:16}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,padding:"8px 12px",background:T.surfaceAlt,borderRadius:10,border:`1px solid ${T.border}`}}>
+              <span style={{fontSize:14}}>{WALL_META[view]?.icon}</span>
+              <span style={{fontSize:13,fontWeight:700,color:T.text}}>{WALL_META[view]?.label}</span>
+              <span style={{fontSize:11,color:T.textDim}}>{WALL_META[view]?.dim}</span>
+              <span style={{flex:1}}/>
+              <span style={{fontSize:11,color:T.textDim,fontFamily:"monospace"}}>{cfg[view].cols} col × {cfg[view].rows} ripiani</span>
+              <span style={{padding:"2px 10px",background:T.orange,color:"white",borderRadius:20,fontSize:11,fontWeight:700}}>
+                {Object.keys(boxes).filter(k=>k.startsWith(view+":")).length} scatole
+              </span>
+            </div>
+            <WallGrid wall={view} cfgW={cfg[view]} boxes={boxes} searchKeys={searchKeys}
+              onSlot={(k,wall,r,c)=>setModal({key:k,wall,row:r,col:c})}/>
+          </div>
+        )}
+      </div>
+
+      {/* STAT CARDS */}
+      {view==="3d"&&(
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginTop:10}}>
+          {["left","fondo","right"].map(w=>{
+            const n=Object.keys(boxes).filter(k=>k.startsWith(w+":")).length;
+            return(
+              <button key={w} onClick={()=>setView(w)}
+                style={{padding:"12px 8px",borderRadius:12,border:`1.5px solid ${T.border}`,background:T.surface,display:"flex",flexDirection:"column",alignItems:"center",gap:4,boxShadow:T.shadow,transition:"all 0.15s",fontFamily:"inherit"}}
+                onMouseEnter={e=>{e.currentTarget.style.borderColor=T.blue;e.currentTarget.style.boxShadow=T.shadowMd;e.currentTarget.style.transform="translateY(-2px)";}}
+                onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.boxShadow=T.shadow;e.currentTarget.style.transform="";}}>
+                <span style={{fontSize:20,fontWeight:800,color:n>0?T.orange:T.textMute}}>{n}</span>
+                <span style={{fontSize:10,fontWeight:600,color:T.textDim}}>{WALL_META[w].label}</span>
+                <span style={{fontSize:9,color:T.textMute}}>{cfg[w].cols}×{cfg[w].rows}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {modal&&(
+        <BoxModal slotKey={modal.key} wall={modal.wall} row={modal.row} col={modal.col}
+          box={modalBox} cfgW={cfg[modal.wall]} saving={saving}
+          onSave={handleSaveBox} onDelete={handleDeleteBox} onClose={()=>setModal(null)}/>
+      )}
+      <Toast msg={toast?.msg} type={toast?.type}/>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
