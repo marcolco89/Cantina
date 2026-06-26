@@ -26,17 +26,18 @@ const { useState, useEffect, useRef } = React;
 const SUPA_URL = "https://lbtnzhieolwlpgnsaffv.supabase.co";
 const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxidG56aGllb2x3bHBnbnNhZmZ2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg5NjYyNzAsImV4cCI6MjA2NDU0MjI3MH0.3HxmaJG2bPBX0j3o4fNKUMvVFfBzSb5RGfidT3OWRVE";
 
-async function sbFetch(path, opts={}) {
-  const res = await fetch(SUPA_URL + "/rest/v1/" + path, {
-    headers: {
-      "apikey": SUPA_KEY,
-      "Authorization": "Bearer " + SUPA_KEY,
-      "Content-Type": "application/json",
-      "Prefer": opts.prefer || "return=representation",
-      ...opts.headers
-    },
-    ...opts
-  });
+async function sbFetch(path, method, body, extraHeaders) {
+  method = method || "GET";
+  extraHeaders = extraHeaders || {};
+  const headers = {
+    "apikey": SUPA_KEY,
+    "Authorization": "Bearer " + SUPA_KEY,
+    "Content-Type": "application/json",
+    ...extraHeaders
+  };
+  const opts = { method, headers };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(SUPA_URL + "/rest/v1/" + path, opts);
   if (!res.ok) { const e = await res.text(); throw new Error(e); }
   const txt = await res.text();
   return txt ? JSON.parse(txt) : null;
@@ -45,34 +46,39 @@ async function sbFetch(path, opts={}) {
 async function getBoxes() {
   const rows = await sbFetch("boxes?select=*");
   const result = {};
-  (rows||[]).forEach(r => { result[r.id] = { name: r.name, items: r.items||[] }; });
+  (rows||[]).forEach(function(r) { result[r.id] = { name: r.name, items: r.items||[] }; });
   return result;
 }
 async function upsertBox(id, wall, row, col, name, items) {
-  await sbFetch("boxes", {
-    method: "POST",
-    prefer: "resolution=merge-duplicates,return=minimal",
-    headers: { "Prefer": "resolution=merge-duplicates,return=minimal" },
-    body: JSON.stringify({ id, wall, row_idx: row, col_idx: col, name, items, updated_at: new Date().toISOString() })
-  });
+  await sbFetch("boxes", "POST",
+    { id: id, wall: wall, row_idx: row, col_idx: col, name: name, items: items, updated_at: new Date().toISOString() },
+    { "Prefer": "resolution=merge-duplicates,return=minimal" }
+  );
 }
 async function deleteBox(id) {
-  await sbFetch("boxes?id=eq." + encodeURIComponent(id), { method: "DELETE", prefer: "return=minimal", headers:{"Prefer":"return=minimal"} });
+  await sbFetch("boxes?id=eq." + encodeURIComponent(id), "DELETE", null, { "Prefer": "return=minimal" });
 }
 async function getCfg() {
   const rows = await sbFetch("shelf_config?select=*");
   if (!rows||!rows.length) return null;
   const result = {};
-  rows.forEach(r => { result[r.wall] = { cols: r.cols, rows: r.rows }; });
+  rows.forEach(function(r) { result[r.wall] = { cols: r.cols, rows: r.rows }; });
   return result;
 }
 async function updateCfg(wall, cols, rows) {
-  await sbFetch("shelf_config?wall=eq." + wall, {
-    method: "PATCH",
-    prefer: "return=minimal",
-    headers: { "Prefer": "return=minimal" },
-    body: JSON.stringify({ cols, rows })
-  });
+  try {
+    await sbFetch(
+      "shelf_config?wall=eq." + wall, "PATCH",
+      { cols: cols, rows: rows },
+      { "Prefer": "return=minimal" }
+    );
+  } catch(e) {
+    // fallback: upsert
+    await sbFetch("shelf_config", "POST",
+      { wall: wall, cols: cols, rows: rows },
+      { "Prefer": "resolution=merge-duplicates,return=minimal" }
+    );
+  }
 }
 
 // ── TOKENS ───────────────────────────────────────────────────────────────────
