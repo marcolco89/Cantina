@@ -24,7 +24,7 @@ const { useState, useEffect, useRef } = React;
 
 // ── SUPABASE CONFIG ───────────────────────────────────────────────────────────
 const SUPA_URL = "https://lbtnzhieolwlpgnsaffv.supabase.co";
-const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxidG56aGllb2x3bHBnbnNhZmZ2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg5NjYyNzAsImV4cCI6MjA2NDU0MjI3MH0.3HxmaJG2bPBX0j3o4fNKUMvVFfBzSb5RGfidT3OWRVE";
+const SUPA_KEY = "sb_publishable_MD_9FQD-_7YQABeRJPErSw_UYrTkHLq";
 
 async function sbFetch(path, method, body, extraHeaders) {
   method = method || "GET";
@@ -66,19 +66,12 @@ async function getCfg() {
   return result;
 }
 async function updateCfg(wall, cols, rows) {
-  try {
-    await sbFetch(
-      "shelf_config?wall=eq." + wall, "PATCH",
-      { cols: cols, rows: rows },
-      { "Prefer": "return=minimal" }
-    );
-  } catch(e) {
-    // fallback: upsert
-    await sbFetch("shelf_config", "POST",
-      { wall: wall, cols: cols, rows: rows },
-      { "Prefer": "resolution=merge-duplicates,return=minimal" }
-    );
-  }
+  // Use native Supabase upsert (POST with merge-duplicates)
+  await sbFetch(
+    "shelf_config", "POST",
+    { wall: wall, cols: cols, rows: rows },
+    { "Prefer": "resolution=merge-duplicates,return=minimal" }
+  );
 }
 
 // ── TOKENS ───────────────────────────────────────────────────────────────────
