@@ -24,7 +24,7 @@ const { useState, useEffect, useRef } = React;
 
 // ── SUPABASE CONFIG ───────────────────────────────────────────────────────────
 const SUPA_URL = "https://lbtnzhieolwlpgnsaffv.supabase.co";
-const SUPA_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxidG56aGllb2x3bHBnbnNhZmZ2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg5NjYyNzAsImV4cCI6MjA2NDU0MjI3MH0.3HxmaJG2bPBX0j3o4fNKUMvVFfBzSb5RGfidT3OWRVE";
+const SUPA_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxidG56aGllb2x3bHBnbnNhZmZ2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzOTM4ODIsImV4cCI6MjA5Nzk2OTg4Mn0.YsuAIBCpIP7FTpQ31poKsjVIhR3aDRriR1QL_CB2eEk";
 const SUPA_PUB = "sb_publishable_MD_9FQD-_7YQABeRJPErSw_UYrTkHLq";
 
 async function sbFetch(path, method, body, extraHeaders) {
@@ -292,39 +292,72 @@ function WallGrid({wall,cfgW,boxes,searchKeys,onSlot}){
   function rowLbl(r){const i=rows-1-r;return i===0?"T":`R${i}`;}
   return(
     <div style={{display:"flex",flexDirection:"column",gap:6}}>
-      {Array.from({length:rows},(_,r)=>(
-        <div key={r} style={{display:"flex",alignItems:"center",gap:6}}>
-          <span style={{fontFamily:"monospace",fontSize:10,color:T.textMute,width:18,textAlign:"right",flexShrink:0,fontWeight:600}}>{rowLbl(r)}</span>
-          <div style={{height:1,width:8,background:T.border,flexShrink:0}}/>
-          <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-            {Array.from({length:cols},(_,c)=>{
-              const k=`${wall}:${r}:${c}`,box=boxes[k],isHL=searchKeys.includes(k);
-              const p=box?boxPal(box.name):null;
-              return(
-                <div key={c} onClick={()=>onSlot(k,wall,r,c)} title={box?box.name:"Aggiungi scatola"}
-                  style={{width:52,height:52,borderRadius:10,cursor:"pointer",
-                    border:isHL?`2px solid ${T.red}`:box?`1.5px solid ${p.border}`:`1.5px dashed ${T.borderHi}`,
-                    background:isHL?T.redLight:box?p.bg:T.surfaceAlt,
-                    display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
-                    position:"relative",transition:"all 0.12s",boxShadow:box?T.shadow:"none"}}
-                  onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=T.shadowMd;}}
-                  onMouseLeave={e=>{e.currentTarget.style.transform="";e.currentTarget.style.boxShadow=box?T.shadow:"none";}}>
-                  {box?(
-                    <>
-                      <span style={{fontSize:8,fontWeight:700,color:p.text,textAlign:"center",lineHeight:1.2,padding:"0 3px",wordBreak:"break-word",maxWidth:48}}>
-                        {box.name.length>9?box.name.slice(0,8)+"…":box.name}
-                      </span>
-                      {box.items.length>0&&<span style={{position:"absolute",top:3,right:4,fontSize:8,color:T.orange,fontWeight:700}}>{box.items.length}</span>}
-                    </>
-                  ):(
-                    <span style={{color:T.textMute,fontSize:20,lineHeight:1,fontWeight:300}}>+</span>
-                  )}
-                </div>
-              );
-            })}
+      {Array.from({length:rows},(_,r)=>{
+        const hasHL=Array.from({length:cols},(_,c)=>searchKeys.includes(`${wall}:${r}:${c}`)).some(Boolean);
+        return(
+          <div key={r} style={{
+            display:"flex",alignItems:"stretch",gap:0,
+            background:hasHL?T.redLight:T.surfaceAlt,
+            borderRadius:12,
+            border:`1px solid ${hasHL?T.red:T.border}`,
+            overflow:"hidden",
+          }}>
+            {/* ripiano label */}
+            <div style={{
+              display:"flex",alignItems:"center",justifyContent:"center",
+              width:32,minWidth:32,
+              background:hasHL?"#FECACA":T.border,
+              borderRight:`1px solid ${hasHL?T.red:T.borderHi}`,
+              flexShrink:0,
+            }}>
+              <span style={{fontFamily:"monospace",fontSize:11,color:hasHL?T.red:T.textMid,fontWeight:700,writingMode:"vertical-rl",transform:"rotate(180deg)",letterSpacing:"0.05em"}}>
+                {rowLbl(r)}
+              </span>
+            </div>
+            {/* slots row — horizontal scroll */}
+            <div style={{
+              display:"flex",gap:6,
+              padding:"8px 10px",
+              overflowX:"auto",
+              overflowY:"hidden",
+              WebkitOverflowScrolling:"touch",
+              scrollbarWidth:"thin",
+              scrollbarColor:`${T.borderHi} transparent`,
+              flex:1,
+              alignItems:"center",
+            }}>
+              {Array.from({length:cols},(_,c)=>{
+                const k=`${wall}:${r}:${c}`,box=boxes[k],isHL=searchKeys.includes(k);
+                const p=box?boxPal(box.name):null;
+                return(
+                  <div key={c} onClick={()=>onSlot(k,wall,r,c)} title={box?box.name:"Aggiungi scatola"}
+                    style={{
+                      width:54,minWidth:54,height:54,borderRadius:10,cursor:"pointer",flexShrink:0,
+                      border:isHL?`2px solid ${T.red}`:box?`1.5px solid ${p.border}`:`1.5px dashed ${T.borderHi}`,
+                      background:isHL?"#FEE2E2":box?p.bg:"white",
+                      display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+                      position:"relative",transition:"all 0.12s",
+                      boxShadow:box?T.shadow:"none",
+                    }}
+                    onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=T.shadowMd;}}
+                    onMouseLeave={e=>{e.currentTarget.style.transform="";e.currentTarget.style.boxShadow=box?T.shadow:"none";}}>
+                    {box?(
+                      <>
+                        <span style={{fontSize:8,fontWeight:700,color:p.text,textAlign:"center",lineHeight:1.2,padding:"0 3px",wordBreak:"break-word",maxWidth:50}}>
+                          {box.name.length>9?box.name.slice(0,8)+"…":box.name}
+                        </span>
+                        {box.items.length>0&&<span style={{position:"absolute",top:3,right:4,fontSize:8,color:T.orange,fontWeight:700}}>{box.items.length}</span>}
+                      </>
+                    ):(
+                      <span style={{color:T.textMute,fontSize:22,lineHeight:1,fontWeight:200}}>+</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
