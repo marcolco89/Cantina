@@ -416,10 +416,22 @@ function Scene3D({boxes,cfg,onWall}){
 function WallGrid({wall,cfgW,boxes,searchKeys,onSlot}){
   const {rows,cols}=cfgW;
   function rowLbl(r){const i=rows-1-r;return i===0?"T":`R${i}`;}
+  // For left/right walls: col 0 = back (fondo), last col = ingresso
+  // In the front view we show col 0 on the LEFT (= fondo side)
+  // so display order is: 0,1,2,...,cols-1 (left=fondo, right=ingresso)
+  // This matches the 3D view where z=0 is back wall
+  const colOrder=Array.from({length:cols},(_,i)=>i);
+  const fondoLabel = wall==="left"?"← fondo · ingresso →":
+                     wall==="right"?"← fondo · ingresso →":null;
   return(
     <div style={{display:"flex",flexDirection:"column",gap:6}}>
+      {fondoLabel&&(
+        <div style={{display:"flex",alignItems:"center",paddingLeft:40,marginBottom:2}}>
+          <span style={{fontSize:10,color:T.textMute,fontStyle:"italic"}}>{fondoLabel}</span>
+        </div>
+      )}
       {Array.from({length:rows},(_,r)=>{
-        const hasHL=Array.from({length:cols},(_,c)=>searchKeys.includes(`${wall}:${r}:${c}`)).some(Boolean);
+        const hasHL=colOrder.some(c=>searchKeys.includes(`${wall}:${r}:${c}`));
         return(
           <div key={r} style={{
             display:"flex",alignItems:"stretch",gap:0,
@@ -440,7 +452,7 @@ function WallGrid({wall,cfgW,boxes,searchKeys,onSlot}){
                 {rowLbl(r)}
               </span>
             </div>
-            {/* slots row — horizontal scroll */}
+            {/* slots row — horizontal scroll, col 0 = fondo side */}
             <div style={{
               display:"flex",gap:6,
               padding:"8px 10px",
@@ -452,11 +464,11 @@ function WallGrid({wall,cfgW,boxes,searchKeys,onSlot}){
               flex:1,
               alignItems:"center",
             }}>
-              {Array.from({length:cols},(_,c)=>{
+              {colOrder.map(c=>{
                 const k=`${wall}:${r}:${c}`,box=boxes[k],isHL=searchKeys.includes(k);
                 const p=box?boxPal(box.name):null;
                 return(
-                  <div key={c} onClick={()=>onSlot(k,wall,r,c)} title={box?box.name:"Aggiungi scatola"}
+                  <div key={c} onClick={()=>onSlot(k,wall,r,c)} title={box?`[col.${c+1}] ${box.name}`:`[col.${c+1}] Aggiungi scatola`}
                     style={{
                       width:54,minWidth:54,height:54,borderRadius:10,cursor:"pointer",flexShrink:0,
                       border:isHL?`2px solid ${T.red}`:box?`1.5px solid ${p.border}`:`1.5px dashed ${T.borderHi}`,
