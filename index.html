@@ -102,186 +102,312 @@ function boxPal(name){ let h=0; for(const c of name) h=(h*31+c.charCodeAt(0))&0x
 
 const DEFAULT_CFG = { fondo:{cols:8,rows:2}, left:{cols:8,rows:6}, right:{cols:8,rows:3} };
 const WALL_META = {
-  fondo:{label:"Parete di fondo",icon:"🔵",dim:"6 m"},
-  left: {label:"Parete sinistra",icon:"🟠",dim:"2,5 m"},
-  right:{label:"Parete destra",  icon:"🟢",dim:"2,5 m"},
+  fondo:{label:"Parete di fondo",icon:"🔵",dim:"2,5 m"},
+  left: {label:"Parete sinistra",icon:"🟠",dim:"6 m"},
+  right:{label:"Parete destra",  icon:"🟢",dim:"6 m"},
 };
 
 // ── 3D SCENE ─────────────────────────────────────────────────────────────────
 function Scene3D({boxes,cfg,onWall}){
   const [hov,setHov]=useState(null);
-  const W=660,H=400,vpX=330,vpY=68,lX=20,rX=640,tY=16,bY=380,fL=198,fR=462;
+  const W=660,H=420;
+  // vanishing point
+  const vpX=330,vpY=130;
+  // outer corners
+  const lX=20,rX=640,tY=20,bY=400;
+  // back wall corners (small, far away)
+  const fL=230,fR=430,fTop=130,fBot=310;
+
   function lerp(a,b,t){return a+(b-a)*t;}
   function nBox(w){return Object.keys(boxes).filter(k=>k.startsWith(w+":")).length;}
 
-  function Post({x,y1,y2}){return(
-    <g>
-      <rect x={x-3} y={y1} width={6} height={y2-y1} fill="#B0BEC5" rx="1.5"/>
-      <rect x={x-1} y={y1} width={2} height={y2-y1} fill="#ECEFF1" opacity="0.7"/>
-      {Array.from({length:Math.floor((y2-y1)/20)},(_,i)=>(
-        <rect key={i} x={x-4} y={y1+16+i*20} width={8} height={2.5} fill="#90A4AE" rx="0.5"/>
-      ))}
-    </g>
-  );}
-
-  function Board({x,y,w,h}){return(
-    <g>
-      <rect x={x} y={y+h} width={w} height={5} fill="#C8892A" opacity="0.6"/>
-      <rect x={x} y={y} width={w} height={h} fill="#F4A942" stroke="#D4892A" strokeWidth="0.8"/>
-      <rect x={x} y={y} width={w} height={3} fill="#FBBF5A" opacity="0.8"/>
-      {Array.from({length:Math.floor(w/8)},(_,i)=>(
-        <line key={i} x1={x+i*8} y1={y} x2={x+i*8} y2={y+h} stroke="#D4892A" strokeWidth="0.4" opacity="0.5"/>
-      ))}
-    </g>
-  );}
-
-  function Box3D({bx,by,bw,bh,name}){
-    const p=boxPal(name);
-    const nm=name.length>6?name.slice(0,5)+"…":name;
-    const lw=Math.min(bw-6,bw*0.82),lh=Math.min(bh*0.38,13);
-    return(
-      <g>
-        <rect x={bx+2} y={by+3} width={bw} height={bh} fill="rgba(0,0,0,0.08)" rx="3"/>
-        <rect x={bx} y={by} width={bw} height={bh} fill={p.bg} stroke={p.border} strokeWidth="1.2" rx="3"/>
-        <rect x={bx} y={by} width={bw} height={3.5} fill="rgba(255,255,255,0.6)" rx="3"/>
-        <rect x={bx+(bw-lw)/2} y={by+(bh-lh)/2} width={lw} height={lh} fill="rgba(255,255,255,0.75)" stroke={p.border} strokeWidth="0.5" rx="2"/>
-        <text x={bx+bw/2} y={by+(bh-lh)/2+lh/2+4} textAnchor="middle" fill={p.text} fontSize="7" fontWeight="700">{nm}</text>
-      </g>
-    );
+  // perspective projection: given a point on the floor/wall in "room space"
+  // roomX: 0=left wall, 1=right wall
+  // roomZ: 0=viewer, 1=back wall
+  function proj(roomX, roomZ){
+    const x=lerp(lX,rX,roomX);
+    const bx=lerp(fL,fR,roomX);
+    const px=lerp(x,bx,roomZ);
+    const py=lerp(bY,fBot,roomZ);
+    return [px,py];
+  }
+  function projTop(roomX, roomZ){
+    const x=lerp(lX,rX,roomX);
+    const bx=lerp(fL,fR,roomX);
+    const px=lerp(x,bx,roomZ);
+    const py=lerp(tY,fTop,roomZ);
+    return [px,py];
   }
 
-  function LeftWall(){
-    const rows=cfg.left.rows,cols=cfg.left.cols;
-    const wallH=bY-tY-32,rowH=wallH/(rows+0.4),slotW=(fL-lX)/cols,nUp=Math.min(cols+1,5);
-    return(<g>
-      {Array.from({length:nUp+1},(_,i)=><Post key={i} x={lerp(lX,fL,i/nUp)} y1={tY+32} y2={bY-2}/>)}
-      {Array.from({length:rows+1},(_,r)=><Board key={r} x={lX+3} y={tY+32+rowH*(r+0.2)} w={fL-lX-6} h={7}/>)}
-      {Array.from({length:rows},(_,r)=>Array.from({length:cols},(_,c)=>{
-        const k=`left:${r}:${c}`;const box=boxes[k];if(!box)return null;
-        const sy=tY+32+rowH*(r+0.2)+7,ny=tY+32+rowH*(r+1+0.2);
-        const avH=ny-sy-4,bh=Math.max(Math.min(avH*0.82,avH-2),9);
-        const bw=slotW*0.76,bx=lX+slotW*c+slotW*0.12,by=ny-bh-3;
-        return <Box3D key={k} bx={bx} by={by} bw={bw} bh={bh} name={box.name}/>;
-      }))}
-    </g>);
+  // Draw a shelf board on the LEFT wall in perspective
+  // shelfZ: depth position (0=front, 1=back)
+  // heightT: vertical position (0=floor, 1=ceiling)
+  function shelfPtsLeft(z0,z1,ht,thick){
+    const thickFrac=thick/(bY-tY);
+    const p0=proj(0,z0); const p1=proj(0,z1);
+    const pt0=projTop(0,z0); const pt1=projTop(0,z1);
+    // board top surface: trapezoid
+    const yTop0=lerp(p0[1],pt0[1],ht);
+    const yTop1=lerp(p1[1],pt1[1],ht);
+    const yBot0=lerp(p0[1],pt0[1],ht-thickFrac);
+    const yBot1=lerp(p1[1],pt1[1],ht-thickFrac);
+    return {
+      top:[[p0[0],yTop0],[p1[0],yTop1],[p1[0],yBot1],[p0[0],yBot0]],
+      frontX:p0[0],frontY0:yTop0,frontY1:yBot0
+    };
+  }
+  function shelfPtsRight(z0,z1,ht,thick){
+    const thickFrac=thick/(bY-tY);
+    const p0=proj(1,z0); const p1=proj(1,z1);
+    const pt0=projTop(1,z0); const pt1=projTop(1,z1);
+    const yTop0=lerp(p0[1],pt0[1],ht);
+    const yTop1=lerp(p1[1],pt1[1],ht);
+    const yBot0=lerp(p0[1],pt0[1],ht-thickFrac);
+    const yBot1=lerp(p1[1],pt1[1],ht-thickFrac);
+    return {
+      top:[[p0[0],yTop0],[p1[0],yTop1],[p1[0],yBot1],[p0[0],yBot0]],
+    };
   }
 
-  function RightWall(){
-    const rows=cfg.right.rows,cols=cfg.right.cols;
-    const wallH=bY-tY-32,rowH=wallH/(rows+0.4),slotW=(rX-fR)/cols,nUp=Math.min(cols+1,5);
-    return(<g>
-      {Array.from({length:nUp+1},(_,i)=><Post key={i} x={lerp(fR,rX,i/nUp)} y1={tY+32} y2={bY-2}/>)}
-      {Array.from({length:rows+1},(_,r)=><Board key={r} x={fR+3} y={tY+32+rowH*(r+0.2)} w={rX-fR-6} h={7}/>)}
-      {Array.from({length:rows},(_,r)=>Array.from({length:cols},(_,c)=>{
-        const k=`right:${r}:${c}`;const box=boxes[k];if(!box)return null;
-        const sy=tY+32+rowH*(r+0.2)+7,ny=tY+32+rowH*(r+1+0.2);
-        const avH=ny-sy-4,bh=Math.max(Math.min(avH*0.82,avH-2),9);
-        const bw=slotW*0.76,bx=fR+slotW*c+slotW*0.12,by=ny-bh-3;
-        return <Box3D key={k} bx={bx} by={by} bw={bw} bh={bh} name={box.name}/>;
-      }))}
-    </g>);
+  function ptsStr(pts){return pts.map(p=>p.join(",")).join(" ");}
+
+  // render left wall shelves in perspective
+  function LeftWallShelves(){
+    const rows=cfg.left.rows, cols=cfg.left.cols;
+    const shelves=[];
+    const posts=[];
+    const boxEls=[];
+    const thick=0.04;
+
+    // upright posts along left wall
+    const nPosts=Math.min(cols,5)+1;
+    for(let i=0;i<=nPosts;i++){
+      const z=i/nPosts;
+      const p0=proj(0,z); const p1=projTop(0,z);
+      posts.push(<line key={i} x1={p0[0]} y1={p0[1]} x2={p1[0]} y2={p1[1]} stroke="#90A4AE" strokeWidth={Math.max(1,3*(1-z))} opacity="0.8"/>);
+    }
+
+    // shelf boards
+    for(let r=0;r<=rows;r++){
+      const ht=(r+0.15)/(rows+0.3);
+      const s=shelfPtsLeft(0,1,1-ht,thick);
+      shelves.push(
+        <g key={r}>
+          <polygon points={ptsStr(s.top)} fill="#F4A942" stroke="#D4892A" strokeWidth="0.8"/>
+          <polygon points={ptsStr([[s.top[0][0],s.top[0][1]],[s.top[3][0],s.top[3][1]],[s.top[3][0]+3,s.top[3][1]+4],[s.top[0][0]+3,s.top[0][1]+4]])} fill="#C8892A" opacity="0.7"/>
+        </g>
+      );
+    }
+
+    // boxes on shelves
+    for(let r=0;r<rows;r++){
+      for(let c=0;c<cols;c++){
+        const k=`left:${r}:${c}`; const box=boxes[k]; if(!box) continue;
+        const ht0=(r+0.15)/(rows+0.3);
+        const ht1=(r+1+0.15)/(rows+0.3);
+        const z0=c/cols, z1=(c+0.85)/cols;
+        const p=boxPal(box.name);
+        const nm=box.name.length>4?box.name.slice(0,3)+"…":box.name;
+        const yShelf0=lerp(proj(0,z0)[1],projTop(0,z0)[1],1-ht0);
+        const yShelf1=lerp(proj(0,z1)[1],projTop(0,z1)[1],1-ht0);
+        const yTop0=lerp(proj(0,z0)[1],projTop(0,z0)[1],1-ht1+0.02);
+        const yTop1=lerp(proj(0,z1)[1],projTop(0,z1)[1],1-ht1+0.02);
+        const x0=proj(0,z0)[0], x1=proj(0,z1)[0];
+        const bpts=[[x0,yTop0],[x1,yTop1],[x1,yShelf1],[x0,yShelf0]];
+        boxEls.push(
+          <g key={k}>
+            <polygon points={ptsStr(bpts)} fill={p.bg} stroke={p.border} strokeWidth="1"/>
+            <text x={(x0+x1)/2} y={(yTop0+yShelf0)/2+3} textAnchor="middle" fill={p.text} fontSize="6" fontWeight="700">{nm}</text>
+          </g>
+        );
+      }
+    }
+    return <g>{posts}{shelves}{boxEls}</g>;
   }
 
-  function FondoWall(){
-    const rows=cfg.fondo.rows,cols=cfg.fondo.cols,totH=bY-vpY,rowH=totH/(rows+0.4),nUp=Math.min(cols+1,5);
-    return(<g>
-      {Array.from({length:nUp+1},(_,i)=>{
-        const t=i/nUp,ux=lerp(fL,fR,t),sc=0.18;
-        return <Post key={i} x={ux} y1={lerp(vpY,bY,sc)} y2={bY-2}/>;
-      })}
-      {Array.from({length:rows+1},(_,r)=>{
-        const t=(r+0.2)/(rows+0.4),sc=Math.pow(t,0.62);
-        const py=vpY+totH*t,px1=lerp(vpX,fL,sc),px2=lerp(vpX,fR,sc);
-        return <Board key={r} x={px1} y={py} w={px2-px1} h={5}/>;
-      })}
-      {Array.from({length:rows},(_,r)=>Array.from({length:cols},(_,c)=>{
-        const k=`fondo:${r}:${c}`;const box=boxes[k];if(!box)return null;
-        const t2=(r+1+0.2)/(rows+0.4),sc2=Math.pow(t2,0.62);
-        const py1=vpY+totH*(r+0.2)/(rows+0.4)+5,py2=vpY+totH*t2;
-        const px1=lerp(vpX,fL,sc2),px2=lerp(vpX,fR,sc2),slotW=(px2-px1)/cols;
-        const avH=py2-py1-4,bh=Math.max(Math.min(avH*0.8,avH-2),8);
-        const bw=slotW*0.74,bx=px1+slotW*c+slotW*0.13,by=py2-bh-2;
-        return <Box3D key={k} bx={bx} by={by} bw={bw} bh={bh} name={box.name}/>;
-      }))}
-    </g>);
+  function RightWallShelves(){
+    const rows=cfg.right.rows, cols=cfg.right.cols;
+    const shelves=[], posts=[], boxEls=[];
+    const thick=0.04;
+    const nPosts=Math.min(cols,5)+1;
+    for(let i=0;i<=nPosts;i++){
+      const z=i/nPosts;
+      const p0=proj(1,z); const p1=projTop(1,z);
+      posts.push(<line key={i} x1={p0[0]} y1={p0[1]} x2={p1[0]} y2={p1[1]} stroke="#90A4AE" strokeWidth={Math.max(1,3*(1-z))} opacity="0.8"/>);
+    }
+    for(let r=0;r<=rows;r++){
+      const ht=(r+0.15)/(rows+0.3);
+      const s=shelfPtsRight(0,1,1-ht,thick);
+      shelves.push(
+        <g key={r}>
+          <polygon points={ptsStr(s.top)} fill="#F4A942" stroke="#D4892A" strokeWidth="0.8"/>
+        </g>
+      );
+    }
+    for(let r=0;r<rows;r++){
+      for(let c=0;c<cols;c++){
+        const k=`right:${r}:${c}`; const box=boxes[k]; if(!box) continue;
+        const ht0=(r+0.15)/(rows+0.3);
+        const ht1=(r+1+0.15)/(rows+0.3);
+        const z0=c/cols, z1=(c+0.85)/cols;
+        const p=boxPal(box.name);
+        const nm=box.name.length>4?box.name.slice(0,3)+"…":box.name;
+        const yShelf0=lerp(proj(1,z0)[1],projTop(1,z0)[1],1-ht0);
+        const yShelf1=lerp(proj(1,z1)[1],projTop(1,z1)[1],1-ht0);
+        const yTop0=lerp(proj(1,z0)[1],projTop(1,z0)[1],1-ht1+0.02);
+        const yTop1=lerp(proj(1,z1)[1],projTop(1,z1)[1],1-ht1+0.02);
+        const x0=proj(1,z0)[0], x1=proj(1,z1)[0];
+        const bpts=[[x0,yTop0],[x1,yTop1],[x1,yShelf1],[x0,yShelf0]];
+        boxEls.push(
+          <g key={k}>
+            <polygon points={ptsStr(bpts)} fill={p.bg} stroke={p.border} strokeWidth="1"/>
+            <text x={(x0+x1)/2} y={(yTop0+yShelf0)/2+3} textAnchor="middle" fill={p.text} fontSize="6" fontWeight="700">{nm}</text>
+          </g>
+        );
+      }
+    }
+    return <g>{posts}{shelves}{boxEls}</g>;
   }
+
+  function FondoWallShelves(){
+    const rows=cfg.fondo.rows, cols=cfg.fondo.cols;
+    const shelves=[], posts=[], boxEls=[];
+    for(let i=0;i<=cols;i++){
+      const x=lerp(fL,fR,i/cols);
+      posts.push(<line key={i} x1={x} y1={fTop} x2={x} y2={fBot} stroke="#90A4AE" strokeWidth="1.5" opacity="0.8"/>);
+    }
+    for(let r=0;r<=rows;r++){
+      const ht=(r+0.15)/(rows+0.3);
+      const y=lerp(fBot,fTop,ht);
+      shelves.push(<line key={r} x1={fL} y1={y} x2={fR} y2={y} stroke="#F4A942" strokeWidth="5"/>);
+      shelves.push(<line key={r+"d"} x1={fL} y1={y+5} x2={fR} y2={y+5} stroke="#C8892A" strokeWidth="2" opacity="0.6"/>);
+    }
+    for(let r=0;r<rows;r++){
+      for(let c=0;c<cols;c++){
+        const k=`fondo:${r}:${c}`; const box=boxes[k]; if(!box) continue;
+        const ht0=(r+0.15)/(rows+0.3);
+        const ht1=(r+1+0.15)/(rows+0.3);
+        const yBot=lerp(fBot,fTop,ht0);
+        const yTop2=lerp(fBot,fTop,ht1)+6;
+        const x0=lerp(fL,fR,c/cols)+2;
+        const x1=lerp(fL,fR,(c+0.9)/cols);
+        const p=boxPal(box.name);
+        const nm=box.name.length>5?box.name.slice(0,4)+"…":box.name;
+        boxEls.push(
+          <g key={k}>
+            <rect x={x0} y={yTop2} width={x1-x0} height={yBot-yTop2-2} fill={p.bg} stroke={p.border} strokeWidth="0.8" rx="2"/>
+            <text x={(x0+x1)/2} y={(yTop2+yBot)/2+3} textAnchor="middle" fill={p.text} fontSize="6" fontWeight="700">{nm}</text>
+          </g>
+        );
+      }
+    }
+    return <g>{posts}{shelves}{boxEls}</g>;
+  }
+
+  // click zones
+  const leftPts=[[lX,bY],[fL,fBot],[fL,fTop],[lX,tY]];
+  const rightPts=[[rX,bY],[fR,fBot],[fR,fTop],[rX,tY]];
+  const fondoPts=[[fL,fTop],[fR,fTop],[fR,fBot],[fL,fBot]];
 
   const zones=[
-    {id:"left", pts:[[lX,bY],[fL,bY],[vpX,vpY],[lX,tY]],lx:82, ly:bY-64,label:"SINISTRA"},
-    {id:"right",pts:[[rX,bY],[fR,bY],[vpX,vpY],[rX,tY]],lx:578,ly:bY-64,label:"DESTRA"},
-    {id:"fondo",pts:[[fL,bY],[fR,bY],[vpX,vpY]],         lx:vpX,ly:vpY+82,label:"FONDO"},
+    {id:"left", pts:leftPts,  lx:lerp(lX,fL,0.45), ly:lerp(bY,fBot,0.45)-30, label:"SINISTRA"},
+    {id:"right",pts:rightPts, lx:lerp(rX,fR,0.45), ly:lerp(bY,fBot,0.45)-30, label:"DESTRA"},
+    {id:"fondo",pts:fondoPts, lx:(fL+fR)/2,         ly:(fTop+fBot)/2,          label:"FONDO"},
   ];
 
   return(
     <svg viewBox={`0 0 ${W} ${H}`} style={{display:"block",width:"100%",borderRadius:16}}>
       <defs>
-        <pattern id="wallL" width="48" height="24" patternUnits="userSpaceOnUse">
-          <rect width="48" height="24" fill="#E8EDF5"/>
-          <rect width="48" height="24" fill="none" stroke="#D4DAE8" strokeWidth="0.5"/>
-          <rect x="0" y="0" width="24" height="12" fill="none" stroke="#D4DAE8" strokeWidth="0.4"/>
-          <rect x="24" y="12" width="24" height="12" fill="none" stroke="#D4DAE8" strokeWidth="0.4"/>
+        <pattern id="wallL" width="40" height="20" patternUnits="userSpaceOnUse">
+          <rect width="40" height="20" fill="#E8EDF5"/>
+          <rect width="40" height="20" fill="none" stroke="#D0D8E8" strokeWidth="0.4"/>
+          <rect x="0" y="0" width="20" height="10" fill="none" stroke="#D0D8E8" strokeWidth="0.3"/>
+          <rect x="20" y="10" width="20" height="10" fill="none" stroke="#D0D8E8" strokeWidth="0.3"/>
         </pattern>
-        <pattern id="wallR" width="48" height="24" patternUnits="userSpaceOnUse">
-          <rect width="48" height="24" fill="#DEE4EF"/>
-          <rect width="48" height="24" fill="none" stroke="#C8D0E0" strokeWidth="0.5"/>
-          <rect x="0" y="0" width="24" height="12" fill="none" stroke="#C8D0E0" strokeWidth="0.4"/>
-          <rect x="24" y="12" width="24" height="12" fill="none" stroke="#C8D0E0" strokeWidth="0.4"/>
+        <pattern id="wallR" width="40" height="20" patternUnits="userSpaceOnUse">
+          <rect width="40" height="20" fill="#DDE3EF"/>
+          <rect width="40" height="20" fill="none" stroke="#C8D0E0" strokeWidth="0.4"/>
+          <rect x="0" y="0" width="20" height="10" fill="none" stroke="#C8D0E0" strokeWidth="0.3"/>
+          <rect x="20" y="10" width="20" height="10" fill="none" stroke="#C8D0E0" strokeWidth="0.3"/>
         </pattern>
-        <pattern id="wallF" width="48" height="24" patternUnits="userSpaceOnUse">
-          <rect width="48" height="24" fill="#D8E0EE"/>
-          <rect width="48" height="24" fill="none" stroke="#C0CADE" strokeWidth="0.4"/>
+        <pattern id="wallF" width="40" height="20" patternUnits="userSpaceOnUse">
+          <rect width="40" height="20" fill="#D4DCF0"/>
+          <rect width="40" height="20" fill="none" stroke="#C0CAE0" strokeWidth="0.4"/>
         </pattern>
-        <pattern id="floorP" width="60" height="60" patternUnits="userSpaceOnUse">
-          <rect width="60" height="60" fill="#CDD5E0"/>
-          <rect width="60" height="60" fill="none" stroke="#BCC6D6" strokeWidth="1"/>
-          <rect x="0" y="0" width="30" height="30" fill="#D4DCE8" opacity="0.4"/>
-          <rect x="30" y="30" width="30" height="30" fill="#D4DCE8" opacity="0.4"/>
+        <pattern id="floorP" width="55" height="55" patternUnits="userSpaceOnUse">
+          <rect width="55" height="55" fill="#C8D2E0"/>
+          <rect width="55" height="55" fill="none" stroke="#B8C4D4" strokeWidth="0.8"/>
+          <rect x="0" y="0" width="27" height="27" fill="#D0DAE8" opacity="0.5"/>
+          <rect x="27" y="27" width="27" height="27" fill="#D0DAE8" opacity="0.5"/>
         </pattern>
-        <filter id="ws"><feDropShadow dx="2" dy="2" stdDeviation="3" floodOpacity="0.1"/></filter>
-        <linearGradient id="cg" x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" stopColor="#B0BEC5"/><stop offset="100%" stopColor="#CFD8DC"/>
-        </linearGradient>
-        <radialGradient id="lg" cx="50%" cy="100%" r="50%">
-          <stop offset="0%" stopColor="#FFF9C4" stopOpacity="0.5"/>
-          <stop offset="100%" stopColor="#FFF9C4" stopOpacity="0"/>
+        <pattern id="ceilP" width="55" height="55" patternUnits="userSpaceOnUse">
+          <rect width="55" height="55" fill="#C0CAD8"/>
+          <rect width="55" height="55" fill="none" stroke="#B0BCCB" strokeWidth="0.5"/>
+        </pattern>
+        <filter id="ws"><feDropShadow dx="1" dy="1" stdDeviation="2" floodOpacity="0.12"/></filter>
+        <radialGradient id="lampG" cx="50%" cy="0%" r="80%">
+          <stop offset="0%" stopColor="#FFFDE7" stopOpacity="0.6"/>
+          <stop offset="100%" stopColor="#FFFDE7" stopOpacity="0"/>
         </radialGradient>
       </defs>
+
       <rect width={W} height={H} fill="#F0F4F8"/>
-      <polygon points={zones[0].pts.map(p=>p.join(",")).join(" ")} fill="url(#wallL)" stroke="#C8D0E0" strokeWidth="1"/>
-      <polygon points={zones[1].pts.map(p=>p.join(",")).join(" ")} fill="url(#wallR)" stroke="#C8D0E0" strokeWidth="1"/>
-      <polygon points={zones[2].pts.map(p=>p.join(",")).join(" ")} fill="url(#wallF)" stroke="#B8C4D4" strokeWidth="1"/>
-      <polygon points={`${lX},${bY} ${fL},${bY} ${fR},${bY} ${rX},${bY} ${rX},${H} ${lX},${H}`} fill="url(#floorP)"/>
-      <line x1={lX} y1={bY} x2={rX} y2={bY} stroke="#A0AEBE" strokeWidth="2"/>
-      <rect x={lX} y={tY} width={rX-lX} height={34} fill="url(#cg)"/>
-      <line x1={lX} y1={tY+34} x2={rX} y2={tY+34} stroke="#90A4AE" strokeWidth="1.5"/>
-      <ellipse cx={vpX} cy={tY+44} rx={140} ry={30} fill="url(#lg)"/>
-      <rect x={vpX-3} y={tY+6} width={6} height={26} fill="#90A4AE" rx="2"/>
-      <rect x={vpX-60} y={tY+32} width={120} height={14} fill="#FFFDE7" rx="4" stroke="#F9A825" strokeWidth="1"/>
-      <rect x={vpX-56} y={tY+33} width={112} height={5} fill="rgba(255,255,255,0.7)" rx="3"/>
-      {[[lX,tY],[rX,tY],[lX,bY],[rX,bY]].map(([x,y],i)=>(
-        <line key={i} x1={x} y1={y} x2={vpX} y2={vpY} stroke="#B0BCCF" strokeWidth="0.7"/>
-      ))}
-      <LeftWall/><RightWall/><FondoWall/>
+
+      {/* floor */}
+      <polygon points={`${lX},${bY} ${fL},${fBot} ${fR},${fBot} ${rX},${bY}`} fill="url(#floorP)"/>
+      {/* ceiling */}
+      <polygon points={`${lX},${tY} ${fL},${fTop} ${fR},${fTop} ${rX},${tY}`} fill="url(#ceilP)"/>
+      {/* left wall */}
+      <polygon points={ptsStr(leftPts)} fill="url(#wallL)" stroke="#C0CAD8" strokeWidth="0.8"/>
+      {/* right wall */}
+      <polygon points={ptsStr(rightPts)} fill="url(#wallR)" stroke="#C0CAD8" strokeWidth="0.8"/>
+      {/* back wall */}
+      <polygon points={ptsStr(fondoPts)} fill="url(#wallF)" stroke="#B0BCCB" strokeWidth="0.8"/>
+
+      {/* perspective edge lines */}
+      <line x1={lX} y1={tY} x2={fL} y2={fTop} stroke="#A0AEBE" strokeWidth="1"/>
+      <line x1={rX} y1={tY} x2={fR} y2={fTop} stroke="#A0AEBE" strokeWidth="1"/>
+      <line x1={lX} y1={bY} x2={fL} y2={fBot} stroke="#A0AEBE" strokeWidth="1"/>
+      <line x1={rX} y1={bY} x2={fR} y2={fBot} stroke="#A0AEBE" strokeWidth="1"/>
+      <line x1={fL} y1={fTop} x2={fR} y2={fTop} stroke="#A0AEBE" strokeWidth="1"/>
+      <line x1={fL} y1={fBot} x2={fR} y2={fBot} stroke="#A0AEBE" strokeWidth="1"/>
+      <line x1={fL} y1={fTop} x2={fL} y2={fBot} stroke="#A0AEBE" strokeWidth="1"/>
+      <line x1={fR} y1={fTop} x2={fR} y2={fBot} stroke="#A0AEBE" strokeWidth="1"/>
+
+      {/* lamp glow */}
+      <ellipse cx={vpX} cy={tY+10} rx={180} ry={60} fill="url(#lampG)"/>
+      {/* lamp fixture */}
+      <rect x={vpX-4} y={tY} width={8} height={20} fill="#90A4AE" rx="2"/>
+      <rect x={vpX-55} y={tY+20} width={110} height={12} fill="#FFFDE7" rx="3" stroke="#F9A825" strokeWidth="0.8"/>
+      <rect x={vpX-50} y={tY+21} width={100} height={4} fill="rgba(255,255,255,0.7)" rx="2"/>
+
+      {/* shelves */}
+      <LeftWallShelves/>
+      <RightWallShelves/>
+      <FondoWallShelves/>
+
+      {/* click zones */}
       {zones.map(({id,pts,lx,ly,label})=>{
-        const n=nBox(id),isH=hov===id,ptsStr=pts.map(p=>p.join(",")).join(" ");
+        const n=nBox(id),isH=hov===id,ps=pts.map(p=>p.join(",")).join(" ");
         const chipW=n>0?94:80;
         return(
           <g key={id} style={{cursor:"pointer"}}
              onMouseEnter={()=>setHov(id)} onMouseLeave={()=>setHov(null)}
              onClick={()=>onWall(id)}>
-            <polygon points={ptsStr} fill={isH?"rgba(49,130,206,0.08)":"transparent"} stroke={isH?T.blue:"transparent"} strokeWidth="2"/>
-            <rect x={lx-chipW/2} y={ly-16} width={chipW} height={30} rx="15"
+            <polygon points={ps} fill={isH?"rgba(49,130,206,0.10)":"transparent"} stroke={isH?T.blue:"transparent"} strokeWidth="2"/>
+            <rect x={lx-chipW/2} y={ly-14} width={chipW} height={28} rx="14"
               fill={isH?T.blue:"white"} stroke={isH?T.blue:T.border} strokeWidth="1.5" filter="url(#ws)"/>
-            <text x={lx-(n>0?9:0)} y={ly+5} textAnchor="middle"
-              fill={isH?"white":T.textMid} fontSize="10" fontWeight="700" letterSpacing="0.06em">{label}</text>
+            <text x={lx-(n>0?8:0)} y={ly+5} textAnchor="middle"
+              fill={isH?"white":T.textMid} fontSize="9.5" fontWeight="700" letterSpacing="0.06em">{label}</text>
             {n>0&&(<>
-              <rect x={lx+chipW/2-26} y={ly-12} width={22} height={22} rx="11" fill={isH?"rgba(255,255,255,0.25)":T.orange}/>
-              <text x={lx+chipW/2-15} y={ly+5} textAnchor="middle" fill="white" fontSize="9.5" fontWeight="700">{n}</text>
+              <rect x={lx+chipW/2-25} y={ly-10} width={20} height={20} rx="10" fill={isH?"rgba(255,255,255,0.3)":T.orange}/>
+              <text x={lx+chipW/2-15} y={ly+5} textAnchor="middle" fill="white" fontSize="9" fontWeight="700">{n}</text>
             </>)}
           </g>
         );
       })}
-      <text x={W/2} y={H-8} textAnchor="middle" fill={T.textMute} fontSize="10">clicca su una parete per aprirla</text>
+
+      <text x={W/2} y={H-6} textAnchor="middle" fill={T.textMute} fontSize="9.5">clicca su una parete per aprirla</text>
     </svg>
   );
 }
