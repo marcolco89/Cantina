@@ -209,11 +209,12 @@ function Scene3D({boxes,cfg,onWall}){
       for(let c=0;c<cols;c++){
         const k=`left:${r}:${c}`; const box=boxes[k]; if(!box) continue;
         const htShelf =1-(r+0.15)/(rows+0.3);
-        const htBoxTop=1-(r+0.85)/(rows+0.3);
+        const spanL   =1.0/(rows+0.3);
+        const htBoxTop=htShelf+spanL*0.75; // box top is above shelf
         const z0=1-(c+0.88)/cols, z1=1-c/cols;
         const p=boxPal(box.name);
         const nm=box.name.length>4?box.name.slice(0,3)+"…":box.name;
-        // Four corners of front face (the face we see on the wall)
+        // Four corners of front face
         const yShelf0=lerp(proj(0,z0)[1],projTop(0,z0)[1],htShelf);
         const yShelf1=lerp(proj(0,z1)[1],projTop(0,z1)[1],htShelf);
         const yTop0  =lerp(proj(0,z0)[1],projTop(0,z0)[1],htBoxTop);
@@ -280,7 +281,8 @@ function Scene3D({boxes,cfg,onWall}){
         // RIGHT WALL — 3D boxes
         // r=0=top shelf, r=rows-1=Terra
         const htShelf =1-(r+0.15)/(rows+0.3);
-        const htBoxTop=1-(r+0.85)/(rows+0.3);
+        const spanR   =1.0/(rows+0.3);
+        const htBoxTop=htShelf+spanR*0.75; // box top is above shelf
         // col 0=fondo(z=1 far), col cols-1=ingresso(z=0 near)
         const z0=1-(c+0.88)/cols, z1=1-c/cols;
         const p=boxPal(box.name);
@@ -335,19 +337,24 @@ function Scene3D({boxes,cfg,onWall}){
     for(let r=0;r<rows;r++){
       for(let c=0;c<cols;c++){
         const k=`fondo:${r}:${c}`; const box=boxes[k]; if(!box) continue;
-        // r=0 → top shelf → yShelf (shelf line) high on wall, yBoxTop above it
-        // FONDO WALL — 3D boxes (viewed straight on, depth goes toward viewer)
-        const htShelf = 1-(r+0.15)/(rows+0.3);
-        const htBoxTop= 1-(r+0.85)/(rows+0.3);
-        const yShelf  = lerp(fBot,fTop,htShelf);
-        const yBoxTop = lerp(fBot,fTop,htBoxTop)+2;
+        // FONDO WALL — 3D boxes
+        // r=0=top shelf(R_max), r=rows-1=Terra(bottom)
+        // htShelf: shelf line (bottom of box), htBoxTop: top of box (must be > htShelf = higher on wall)
+        // lerp(fBot,fTop,ht): ht=1→fTop(top/small y), ht=0→fBot(bottom/large y)
+        // htShelf = shelf surface (bottom of box in screen space = larger SVG y)
+        // htBoxTop = top of box, must be > htShelf so lerp gives smaller SVG y (higher on wall)
+        const htShelf  = 1-(r+0.15)/(rows+0.3);
+        const span     = 1.0/(rows+0.3);
+        const htBoxTop = htShelf + span*0.75;
+        const yShelf   = lerp(fBot,fTop,htShelf);
+        const yBoxTop  = lerp(fBot,fTop,htBoxTop)+2;
         const x0=lerp(fL,fR,c/cols)+2;
         const x1=lerp(fL,fR,(c+0.9)/cols);
         const p=boxPal(box.name);
         const nm=box.name.length>5?box.name.slice(0,4)+"…":box.name;
         const bH=yShelf-yBoxTop-2;
         const bW=x1-x0;
-        if(bH<3) return null;
+        if(bH<3) continue;
         // 3D effect: top face and right side face
         const depth=Math.max(3, bW*0.15);
         const dTop=depth*0.55;
