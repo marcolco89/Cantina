@@ -204,50 +204,43 @@ function Scene3D({boxes,cfg,onWall}){
       );
     }
 
-    // LEFT WALL — 3D boxes
-    // col 0=ingresso(z=0 near), col cols-1=fondo(z=1 far)
-    for(let r=0;r<rows;r++){
-      for(let c=0;c<cols;c++){
-        const k=`left:${r}:${c}`; const box=boxes[k]; if(!box) continue;
-        const htTop    =1-(r+0.15)/(rows+0.3);
-        const htBottom =1-(r+1+0.15)/(rows+0.3);
-        const z0=c/cols, z1=Math.min((c+0.88)/cols,0.98);
-        const p=boxPal(box.name);
-        const nm=box.name.length>4?box.name.slice(0,3)+"…":box.name;
-        const yShelf0=lerp(proj(0,z0)[1],projTop(0,z0)[1],htBottom)+2;
-        const yShelf1=lerp(proj(0,z1)[1],projTop(0,z1)[1],htBottom)+2;
-        const yTop0  =lerp(proj(0,z0)[1],projTop(0,z0)[1],htTop)-2;
-        const yTop1  =lerp(proj(0,z1)[1],projTop(0,z1)[1],htTop)-2;
-        const x0=proj(0,z0)[0], x1=proj(0,z1)[0];
-        const bH=yShelf0-yTop0; if(bH<3) continue;
-        const bW=x1-x0;
-        // Depth offset — boxes stick out from the wall toward viewer (right/positive x direction)
-        const depth=Math.max(4, bW*0.18);
-        const dTop=depth*0.5; // top face foreshortening
-        // Front face (on the wall surface)
-        const frontPts=[[x0,yTop0],[x1,yTop1],[x1,yShelf1],[x0,yShelf0]];
-        // Top face (above front, tilted)
-        const topPts=[[x0,yTop0],[x1,yTop1],[x1+depth,yTop1-dTop],[x0+depth,yTop0-dTop]];
-        // Right side face (near viewer side)
-        const sidePts=[[x1,yTop1],[x1+depth,yTop1-dTop],[x1+depth,yShelf1-dTop+depth*0.1],[x1,yShelf1]];
-        // Darken colors for top/side
-        const topFill=p.bg; const sideFill=p.border;
-        boxEls.push(
-          <g key={k}>
-            {/* shadow */}
-            <polygon points={ptsStr([[x0+2,yShelf0+2],[x1+2,yShelf1+2],[x1+depth+2,yShelf1-dTop+depth*0.1+2],[x0+depth+2,yShelf0-dTop+depth*0.1+2]])} fill="rgba(0,0,0,0.10)"/>
-            {/* front face */}
-            <polygon points={ptsStr(frontPts)} fill={p.bg} stroke={p.border} strokeWidth="0.8"/>
-            {/* top face */}
-            <polygon points={ptsStr(topPts)} fill={topFill} stroke={p.border} strokeWidth="0.8" opacity="0.75"/>
-            {/* right side face */}
-            <polygon points={ptsStr(sidePts)} fill={sideFill} stroke={p.border} strokeWidth="0.8" opacity="0.6"/>
-            {/* label on front */}
-            <text x={(x0+x1)/2} y={(yTop0+yShelf0)/2+3} textAnchor="middle" fill={p.text} fontSize="6" fontWeight="700">{nm}</text>
-          </g>
-        );
-      }
-    }
+     // LEFT WALL — 3D boxes
+     // Facing left wall: col 0=ingresso(near,z=0,x=lX), col last=fondo(far,z=1,x=fL)
+     // proj(0,z): z=0→x=lX(left/near), z=1→x=fL(right/far)
+     for(let r=0;r<rows;r++){
+       for(let c=0;c<cols;c++){
+         const k=`left:${r}:${c}`; const box=boxes[k]; if(!box) continue;
+         const htTop    =1-(r+0.15)/(rows+0.3);
+         const htBottom =1-(r+1+0.15)/(rows+0.3);
+         // col 0=ingresso(z=0,near), col last=fondo(z=1,far)
+         const z0=c/cols, z1=Math.min((c+0.88)/cols,0.98);
+         const p=boxPal(box.name);
+         const nm=box.name.length>4?box.name.slice(0,3)+"…":box.name;
+         // y positions (floor side and top side of box space)
+         const yBot0=lerp(proj(0,z0)[1],projTop(0,z0)[1],htBottom)+2;
+         const yBot1=lerp(proj(0,z1)[1],projTop(0,z1)[1],htBottom)+2;
+         const yT0  =Math.max(lerp(proj(0,z0)[1],projTop(0,z0)[1],htTop)-2, tY+4);
+         const yT1  =Math.max(lerp(proj(0,z1)[1],projTop(0,z1)[1],htTop)-2, tY+4);
+         const x0=proj(0,z0)[0], x1=proj(0,z1)[0];
+         const bH=yBot0-yT0; if(bH<4) continue;
+         const bW=Math.max(x1-x0,2);
+         // 3D: box protrudes RIGHT (toward room center = +x)
+         const depth=Math.max(6, bH*0.25);
+         const dY=depth*0.4;
+         // Faces
+         const front=[[x0,yT0],[x1,yT1],[x1,yBot1],[x0,yBot0]];
+         const top  =[[x0,yT0],[x1,yT1],[x1+depth,yT1-dY],[x0+depth,yT0-dY]];
+         const side =[[x1,yT1],[x1+depth,yT1-dY],[x1+depth,yBot1-dY*0.2],[x1,yBot1]];
+         boxEls.push(
+           <g key={k}>
+             <polygon points={ptsStr(front)} fill={p.bg} stroke={p.border} strokeWidth="0.8"/>
+             <polygon points={ptsStr(top)}   fill={p.bg} stroke={p.border} strokeWidth="0.8" opacity="0.8"/>
+             <polygon points={ptsStr(side)}  fill={p.border} stroke={p.border} strokeWidth="0.5" opacity="0.7"/>
+             <text x={(x0+x1)/2} y={(yT0+yBot0)/2+3} textAnchor="middle" fill={p.text} fontSize="6" fontWeight="700">{nm}</text>
+           </g>
+         );
+       }
+     }
     return <g>{posts}{shelves}{boxEls}</g>;
   }
 
@@ -277,35 +270,31 @@ function Scene3D({boxes,cfg,onWall}){
     for(let r=0;r<rows;r++){
       for(let c=0;c<cols;c++){
         const k=`right:${r}:${c}`; const box=boxes[k]; if(!box) continue;
-        // Box sits BETWEEN shelf r (top) and shelf r+1 (bottom)
         const htTop    =1-(r+0.15)/(rows+0.3);
         const htBottom =1-(r+1+0.15)/(rows+0.3);
+        // col 0=fondo(z=1,far,x=fR), col last=ingresso(z=0,near,x=rX)
         const z0=1-(c+0.88)/cols, z1=1-c/cols;
         const p=boxPal(box.name);
         const nm=box.name.length>4?box.name.slice(0,3)+"…":box.name;
-        const yShelf0=lerp(proj(1,z0)[1],projTop(1,z0)[1],htBottom)+2;
-        const yShelf1=lerp(proj(1,z1)[1],projTop(1,z1)[1],htBottom)+2;
-        const yTop0  =lerp(proj(1,z0)[1],projTop(1,z0)[1],htTop)-2;
-        const yTop1  =lerp(proj(1,z1)[1],projTop(1,z1)[1],htTop)-2;
+        const yBot0=lerp(proj(1,z0)[1],projTop(1,z0)[1],htBottom)+2;
+        const yBot1=lerp(proj(1,z1)[1],projTop(1,z1)[1],htBottom)+2;
+        const yT0  =Math.max(lerp(proj(1,z0)[1],projTop(1,z0)[1],htTop)-2, tY+4);
+        const yT1  =Math.max(lerp(proj(1,z1)[1],projTop(1,z1)[1],htTop)-2, tY+4);
         const x0=proj(1,z0)[0], x1=proj(1,z1)[0];
-        const bH=yShelf0-yTop0; if(bH<3) continue;
-        const bW=Math.abs(x1-x0);
-        // Depth sticks out to the LEFT (toward viewer) for right wall
-        const depth=Math.max(4, bW*0.18);
-        const dTop=depth*0.5;
-        // Front face
-        const frontPts=[[x0,yTop0],[x1,yTop1],[x1,yShelf1],[x0,yShelf0]];
-        // Top face
-        const topPts=[[x0,yTop0],[x1,yTop1],[x1-depth,yTop1-dTop],[x0-depth,yTop0-dTop]];
-        // Left side face (near viewer)
-        const sidePts=[[x0,yTop0],[x0-depth,yTop0-dTop],[x0-depth,yShelf0-dTop+depth*0.1],[x0,yShelf0]];
+        const xL=Math.min(x0,x1), xR=Math.max(x0,x1);
+        const bH=yBot0-yT0; if(bH<4) continue;
+        // 3D: protrudes LEFT toward room center
+        const depth=Math.max(6, bH*0.25);
+        const dY=depth*0.4;
+        const front=[[xL,yT0],[xR,yT1],[xR,yBot1],[xL,yBot0]];
+        const top  =[[xL,yT0],[xR,yT1],[xR-depth,yT1-dY],[xL-depth,yT0-dY]];
+        const side =[[xL,yT0],[xL-depth,yT0-dY],[xL-depth,yBot0-dY*0.2],[xL,yBot0]];
         boxEls.push(
           <g key={k}>
-            <polygon points={ptsStr([[x0-2,yShelf0+2],[x1-2,yShelf1+2],[x1-depth-2,yShelf1-dTop+depth*0.1+2],[x0-depth-2,yShelf0-dTop+depth*0.1+2]])} fill="rgba(0,0,0,0.10)"/>
-            <polygon points={ptsStr(frontPts)} fill={p.bg} stroke={p.border} strokeWidth="0.8"/>
-            <polygon points={ptsStr(topPts)} fill={p.bg} stroke={p.border} strokeWidth="0.8" opacity="0.75"/>
-            <polygon points={ptsStr(sidePts)} fill={p.border} stroke={p.border} strokeWidth="0.8" opacity="0.6"/>
-            <text x={(x0+x1)/2} y={(yTop0+yShelf0)/2+3} textAnchor="middle" fill={p.text} fontSize="6" fontWeight="700">{nm}</text>
+            <polygon points={ptsStr(front)} fill={p.bg} stroke={p.border} strokeWidth="0.8"/>
+            <polygon points={ptsStr(top)}   fill={p.bg} stroke={p.border} strokeWidth="0.8" opacity="0.8"/>
+            <polygon points={ptsStr(side)}  fill={p.border} stroke={p.border} strokeWidth="0.5" opacity="0.7"/>
+            <text x={(xL+xR)/2} y={(yT0+yBot0)/2+3} textAnchor="middle" fill={p.text} fontSize="6" fontWeight="700">{nm}</text>
           </g>
         );
       }
