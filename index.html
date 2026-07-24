@@ -81,6 +81,7 @@ const T = {
   border:"#DDE3EC", borderHi:"#B0BCCF",
   blue:"#3182CE", blueLight:"#EBF4FF", blueDark:"#2B6CB0",
   orange:"#ED8936", orangeLight:"#FFFAF0",
+  green:"#38A169",
   text:"#1A202C", textMid:"#4A5568", textDim:"#718096", textMute:"#A0AEC0",
   red:"#E53E3E", redLight:"#FFF5F5",
   shadow:"0 1px 3px rgba(0,0,0,0.08),0 1px 2px rgba(0,0,0,0.05)",
@@ -561,12 +562,7 @@ function WallGrid({wall,cfgW,boxes,searchKeys,onSlot,moveSource,onMoveStart}){
                           {box.name.length>9?box.name.slice(0,8)+"…":box.name}
                         </span>
                         {box.items.length>0&&<span style={{position:"absolute",top:3,right:4,fontSize:8,color:T.orange,fontWeight:700}}>{box.items.length}</span>}
-                        {!isMoveMode&&<button
-                          onClick={e=>{e.stopPropagation();onMoveStart(k);}}
-                          title="Sposta scatola"
-                          style={{position:"absolute",bottom:2,right:2,background:"none",border:"none",cursor:"pointer",fontSize:11,color:T.textMute,padding:0,lineHeight:1}}
-                          onMouseEnter={e=>{e.currentTarget.style.color=T.blue;}}
-                          onMouseLeave={e=>{e.currentTarget.style.color=T.textMute;}}>✥</button>}
+
                       </>
                     ):(
                       <span style={{color:isMoveMode?T.blue:T.textMute,fontSize:isMoveMode?18:22,lineHeight:1,fontWeight:200}}>{isMoveMode?"→":"+"}</span>
@@ -583,7 +579,7 @@ function WallGrid({wall,cfgW,boxes,searchKeys,onSlot,moveSource,onMoveStart}){
 }
 
 // ── BOX MODAL ─────────────────────────────────────────────────────────────────
-function BoxModal({slotKey,wall,row,col,box,cfgW,onSave,onDelete,onClose,saving}){
+function BoxModal({slotKey,wall,row,col,box,cfgW,onSave,onDelete,onClose,onMoveStart,saving}){
   const [name,setName]=useState(box?.name||"");
   const [items,setItems]=useState(box?.items?[...box.items]:[]);
   const [newItem,setNewItem]=useState("");
