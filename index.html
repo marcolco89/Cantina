@@ -208,17 +208,15 @@ function Scene3D({boxes,cfg,onWall}){
     for(let r=0;r<rows;r++){
       for(let c=0;c<cols;c++){
         const k=`left:${r}:${c}`; const box=boxes[k]; if(!box) continue;
-        const htShelf =1-(r+0.15)/(rows+0.3);
-        const spanL   =1.0/(rows+0.3);
-        const htBoxTop=htShelf+spanL*0.75; // box top is above shelf
+        const htTop    =1-(r+0.15)/(rows+0.3);
+        const htBottom =1-(r+1+0.15)/(rows+0.3);
         const z0=1-(c+0.88)/cols, z1=1-c/cols;
         const p=boxPal(box.name);
         const nm=box.name.length>4?box.name.slice(0,3)+"…":box.name;
-        // Four corners of front face
-        const yShelf0=lerp(proj(0,z0)[1],projTop(0,z0)[1],htShelf);
-        const yShelf1=lerp(proj(0,z1)[1],projTop(0,z1)[1],htShelf);
-        const yTop0  =lerp(proj(0,z0)[1],projTop(0,z0)[1],htBoxTop);
-        const yTop1  =lerp(proj(0,z1)[1],projTop(0,z1)[1],htBoxTop);
+        const yShelf0=lerp(proj(0,z0)[1],projTop(0,z0)[1],htBottom)+2;
+        const yShelf1=lerp(proj(0,z1)[1],projTop(0,z1)[1],htBottom)+2;
+        const yTop0  =lerp(proj(0,z0)[1],projTop(0,z0)[1],htTop)-2;
+        const yTop1  =lerp(proj(0,z1)[1],projTop(0,z1)[1],htTop)-2;
         const x0=proj(0,z0)[0], x1=proj(0,z1)[0];
         const bH=yShelf0-yTop0; if(bH<3) continue;
         const bW=x1-x0;
@@ -278,19 +276,16 @@ function Scene3D({boxes,cfg,onWall}){
     for(let r=0;r<rows;r++){
       for(let c=0;c<cols;c++){
         const k=`right:${r}:${c}`; const box=boxes[k]; if(!box) continue;
-        // RIGHT WALL — 3D boxes
-        // r=0=top shelf, r=rows-1=Terra
-        const htShelf =1-(r+0.15)/(rows+0.3);
-        const spanR   =1.0/(rows+0.3);
-        const htBoxTop=htShelf+spanR*0.75; // box top is above shelf
-        // col 0=fondo(z=1 far), col cols-1=ingresso(z=0 near)
+        // Box sits BETWEEN shelf r (top) and shelf r+1 (bottom)
+        const htTop    =1-(r+0.15)/(rows+0.3);
+        const htBottom =1-(r+1+0.15)/(rows+0.3);
         const z0=1-(c+0.88)/cols, z1=1-c/cols;
         const p=boxPal(box.name);
         const nm=box.name.length>4?box.name.slice(0,3)+"…":box.name;
-        const yShelf0=lerp(proj(1,z0)[1],projTop(1,z0)[1],htShelf);
-        const yShelf1=lerp(proj(1,z1)[1],projTop(1,z1)[1],htShelf);
-        const yTop0  =lerp(proj(1,z0)[1],projTop(1,z0)[1],htBoxTop);
-        const yTop1  =lerp(proj(1,z1)[1],projTop(1,z1)[1],htBoxTop);
+        const yShelf0=lerp(proj(1,z0)[1],projTop(1,z0)[1],htBottom)+2;
+        const yShelf1=lerp(proj(1,z1)[1],projTop(1,z1)[1],htBottom)+2;
+        const yTop0  =lerp(proj(1,z0)[1],projTop(1,z0)[1],htTop)-2;
+        const yTop1  =lerp(proj(1,z1)[1],projTop(1,z1)[1],htTop)-2;
         const x0=proj(1,z0)[0], x1=proj(1,z1)[0];
         const bH=yShelf0-yTop0; if(bH<3) continue;
         const bW=Math.abs(x1-x0);
@@ -337,17 +332,11 @@ function Scene3D({boxes,cfg,onWall}){
     for(let r=0;r<rows;r++){
       for(let c=0;c<cols;c++){
         const k=`fondo:${r}:${c}`; const box=boxes[k]; if(!box) continue;
-        // FONDO WALL — 3D boxes
-        // r=0=top shelf(R_max), r=rows-1=Terra(bottom)
-        // htShelf: shelf line (bottom of box), htBoxTop: top of box (must be > htShelf = higher on wall)
-        // lerp(fBot,fTop,ht): ht=1→fTop(top/small y), ht=0→fBot(bottom/large y)
-        // htShelf = shelf surface (bottom of box in screen space = larger SVG y)
-        // htBoxTop = top of box, must be > htShelf so lerp gives smaller SVG y (higher on wall)
-        const htShelf  = 1-(r+0.15)/(rows+0.3);
-        const span     = 1.0/(rows+0.3);
-        const htBoxTop = htShelf + span*0.75;
-        const yShelf   = lerp(fBot,fTop,htShelf);
-        const yBoxTop  = lerp(fBot,fTop,htBoxTop)+2;
+        // Box sits BETWEEN shelf r (top boundary) and shelf r+1 (bottom boundary)
+        const htTop    = 1-(r+0.15)/(rows+0.3);
+        const htBottom = 1-(r+1+0.15)/(rows+0.3);
+        const yBoxTop  = lerp(fBot,fTop,htTop)+3;
+        const yShelf   = lerp(fBot,fTop,htBottom)-3;
         const x0=lerp(fL,fR,c/cols)+2;
         const x1=lerp(fL,fR,(c+0.9)/cols);
         const p=boxPal(box.name);
@@ -605,7 +594,7 @@ function BoxModal({slotKey,wall,row,col,box,cfgW,onSave,onDelete,onClose,saving}
   function addItem(){const v=newItem.trim();if(!v)return;setItems(p=>[...p,v]);setNewItem("");}
   const pal=name?boxPal(name):BOX_PAL[0];
   return(
-    <div style={{position:"fixed",inset:0,background:"rgba(26,32,44,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16,backdropFilter:"blur(4px)"}}>
+    <div style={{position:"fixed",inset:0,background:"rgba(26,32,44,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:9999,padding:16,backdropFilter:"blur(4px)"}}>
       <div style={{background:T.surface,borderRadius:20,padding:28,width:380,maxWidth:"100%",maxHeight:"88vh",overflowY:"auto",boxShadow:T.shadowLg,display:"flex",flexDirection:"column",gap:18}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -723,7 +712,7 @@ function LostBoxesModal({lostBoxes,onConfirm,onCancel,saving}){
     byWall[b.wall].push(b);
   });
   return(
-    <div style={{position:"fixed",inset:0,background:"rgba(26,32,44,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1100,padding:16,backdropFilter:"blur(4px)"}}>
+    <div style={{position:"fixed",inset:0,background:"rgba(26,32,44,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:9999,padding:16,backdropFilter:"blur(4px)"}}>
       <div style={{background:T.surface,borderRadius:20,padding:28,width:400,maxWidth:"100%",maxHeight:"85vh",overflowY:"auto",boxShadow:T.shadowLg,display:"flex",flexDirection:"column",gap:16}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <div style={{width:42,height:42,borderRadius:10,background:"#FFF5F5",border:`2px solid ${T.red}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>⚠️</div>
