@@ -112,362 +112,283 @@ const WALL_META = {
 function Scene3D({boxes,cfg,onWall}){
   const [hov,setHov]=useState(null);
   const W=660,H=420;
-  // vanishing point
-  const vpX=330,vpY=130;
-  // outer corners
-  const lX=20,rX=640,tY=20,bY=400;
-  // back wall corners (small, far away)
-  const fL=230,fR=430,fTop=130,fBot=310;
 
-  function lerp(a,b,t){return a+(b-a)*t;}
-  function nBox(w){return Object.keys(boxes).filter(k=>k.startsWith(w+":")).length;}
+  // ── True perspective projection ──────────────────────────────────────────
+  // World: X=0..6(left→right), Y=0..2.5(floor→ceiling), Z=0..6(ingresso→fondo)
+  const CAM={x:3.0, y:1.4, z:-3.0};
+  const FL=320; // focal length px
 
-  // perspective projection: given a point on the floor/wall in "room space"
-  // roomX: 0=left wall, 1=right wall
-  // roomZ: 0=viewer, 1=back wall
-  function proj(roomX, roomZ){
-    const x=lerp(lX,rX,roomX);
-    const bx=lerp(fL,fR,roomX);
-    const px=lerp(x,bx,roomZ);
-    const py=lerp(bY,fBot,roomZ);
-    return [px,py];
+  function proj(wx,wy,wz){
+    const dx=wx-CAM.x, dy=wy-CAM.y, dz=wz-CAM.z;
+    const dz2=Math.max(dz,0.05);
+    return [W/2+FL*dx/dz2, H/2-FL*dy/dz2];
   }
-  function projTop(roomX, roomZ){
-    const x=lerp(lX,rX,roomX);
-    const bx=lerp(fL,fR,roomX);
-    const px=lerp(x,bx,roomZ);
-    const py=lerp(tY,fTop,roomZ);
-    return [px,py];
-  }
+  function ptsStr(pts){return pts.map(p=>p.map(v=>v.toFixed(1)).join(",")).join(" ");}
 
-  // Draw a shelf board on the LEFT wall in perspective
-  // shelfZ: depth position (0=front, 1=back)
-  // heightT: vertical position (0=floor, 1=ceiling)
-  function shelfPtsLeft(z0,z1,ht,thick){
-    const thickFrac=thick/(bY-tY);
-    const p0=proj(0,z0); const p1=proj(0,z1);
-    const pt0=projTop(0,z0); const pt1=projTop(0,z1);
-    // board top surface: trapezoid
-    const yTop0=lerp(p0[1],pt0[1],ht);
-    const yTop1=lerp(p1[1],pt1[1],ht);
-    const yBot0=lerp(p0[1],pt0[1],ht-thickFrac);
-    const yBot1=lerp(p1[1],pt1[1],ht-thickFrac);
-    return {
-      top:[[p0[0],yTop0],[p1[0],yTop1],[p1[0],yBot1],[p0[0],yBot0]],
-      frontX:p0[0],frontY0:yTop0,frontY1:yBot0
-    };
-  }
-  function shelfPtsRight(z0,z1,ht,thick){
-    const thickFrac=thick/(bY-tY);
-    const p0=proj(1,z0); const p1=proj(1,z1);
-    const pt0=projTop(1,z0); const pt1=projTop(1,z1);
-    const yTop0=lerp(p0[1],pt0[1],ht);
-    const yTop1=lerp(p1[1],pt1[1],ht);
-    const yBot0=lerp(p0[1],pt0[1],ht-thickFrac);
-    const yBot1=lerp(p1[1],pt1[1],ht-thickFrac);
-    return {
-      top:[[p0[0],yTop0],[p1[0],yTop1],[p1[0],yBot1],[p0[0],yBot0]],
-    };
+  // Room dimensions
+  const RW=6,RH=2.5,RD=6;
+  const BOX_D=0.32; // box depth (sticks into room)
+
+  // Shelf heights for a wall with `rows` rows
+  function shelfWY(r,rows){ return RH-(r+0.15)*RH/(rows+0.3); }
+  function boxTop(r,rows){ return shelfWY(r,rows)-0.04; }
+  function boxBot(r,rows){ return shelfWY(r+1,rows)+0.02; }
+
+  // ── Wall face polygon (for click zones) ──────────────────────────────────
+  function wallPoly(pts4){ // 4 world points → SVG polygon string
+    return ptsStr(pts4.map(p=>proj(...p)));
   }
 
-  function ptsStr(pts){return pts.map(p=>p.join(",")).join(" ");}
-
-  // render left wall shelves in perspective
-  function LeftWallShelves(){
+  // ── Draw shelf boards on left wall ────────────────────────────────────────
+  function LeftShelves(){
     const rows=cfg.left.rows, cols=cfg.left.cols;
-    const shelves=[], posts=[], boxEls=[];
-    const thick=0.04;
-    // Left wall: col 0 = fondo (z=0=back), last col = ingresso (z=1=front)
-    // In WallGrid: left wall col 0 is on the LEFT = fondo side ✓
-    // Viewer stands at z=1 (ingresso) looking toward z=0 (fondo)
-    // So col 0 appears SMALL/FAR (back), last col appears LARGE/NEAR (front)
-
-    const nPosts=Math.min(cols,5)+1;
-    for(let i=0;i<=nPosts;i++){
-      const z=i/nPosts;
-      const p0=proj(0,z); const p1=projTop(0,z);
-      posts.push(<line key={i} x1={p0[0]} y1={p0[1]} x2={p1[0]} y2={p1[1]} stroke="#90A4AE" strokeWidth={Math.max(1,3*(1-z))} opacity="0.8"/>);
+    const cw=RD/cols;
+    const els=[];
+    // vertical posts
+    for(let i=0;i<=Math.min(cols,5);i++){
+      const z=i*RD/Math.min(cols,5);
+      const [x0,y0]=proj(0,0,z); const [x1,y1]=proj(0,RH,z);
+      const w=Math.max(1,4*(1-z/RD));
+      els.push(<line key={"lp"+i} x1={x0} y1={y0} x2={x1} y2={y1} stroke="#90A4AE" strokeWidth={w} opacity="0.7"/>);
     }
-
-    // shelf boards — r=0 is TOP shelf (R_max label), r=rows-1 is BOTTOM (Terra)
-    // ht=0 → bottom (Terra), ht=1 → top ceiling
-    // r=0 → ht near 1 → top shelf (correct: R_max is highest)
-    // r=rows-1 → ht near 0 → bottom shelf = Terra (correct)
+    // shelf boards
     for(let r=0;r<=rows;r++){
-      const ht=1-(r+0.15)/(rows+0.3);  // r=0→high, r=rows→low
-      const s=shelfPtsLeft(0,1,ht,thick);
-      shelves.push(
-        <g key={r}>
-          <polygon points={ptsStr(s.top)} fill="#F4A942" stroke="#D4892A" strokeWidth="0.8"/>
-          <polygon points={ptsStr([[s.top[0][0],s.top[0][1]],[s.top[3][0],s.top[3][1]],[s.top[3][0]+3,s.top[3][1]+4],[s.top[0][0]+3,s.top[0][1]+4]])} fill="#C8892A" opacity="0.7"/>
-        </g>
-      );
+      const wy=shelfWY(r,rows);
+      const p0=proj(0,wy,0), p1=proj(0,wy,RD);
+      const p2=proj(0,wy-0.06,RD), p3=proj(0,wy-0.06,0);
+      els.push(<polygon key={"ls"+r} points={ptsStr([p0,p1,p2,p3])} fill="#F4A942" stroke="#D4892A" strokeWidth="0.8"/>);
     }
-
-     // LEFT WALL — 3D boxes
-     // col 0=ingresso(z=0,near,x=lX), col last=fondo(z=1,far,x=fL)
-     for(let r=0;r<rows;r++){
-       const htShelf =1-(r+0.15)/(rows+0.3);       // shelf r (top boundary)
-       const htNext  =1-(r+1+0.15)/(rows+0.3);     // shelf r+1 (bottom boundary)
-       const htBoxTop=htShelf-0.05;                 // just under shelf r
-       const htBoxBot=htNext+0.01;                  // just above shelf r+1
-       for(let c=0;c<cols;c++){
-         const k=`left:${r}:${c}`; const box=boxes[k]; if(!box) continue;
-         const z0=c/cols, z1=Math.min((c+0.88)/cols,0.98);
-         const p=boxPal(box.name);
-         const nm=box.name.length>4?box.name.slice(0,3)+"…":box.name;
-         // Four wall-face corners using same formula as shelf boards
-         const x0=proj(0,z0)[0],   x1=proj(0,z1)[0];
-         const yBotL=lerp(proj(0,z0)[1],projTop(0,z0)[1],htBoxBot);
-         const yBotR=lerp(proj(0,z1)[1],projTop(0,z1)[1],htBoxBot);
-         const yTopL=lerp(proj(0,z0)[1],projTop(0,z0)[1],htBoxTop);
-         const yTopR=lerp(proj(0,z1)[1],projTop(0,z1)[1],htBoxTop);
-         const bH=yBotL-yTopL; if(bH<3) continue;
-         // 3D top face: tilts upward-right (toward ceiling, in perspective)
-         const dX=bH*0.08; const dY=bH*0.12;
-         const wallFace=[[x0,yTopL],[x1,yTopR],[x1,yBotR],[x0,yBotL]];
-         const topFace =[[x0,yTopL],[x1,yTopR],[x1+dX,yTopR-dY],[x0+dX,yTopL-dY]];
-         const sideFace=[[x1,yTopR],[x1+dX,yTopR-dY],[x1+dX,yBotR-dY*0.3],[x1,yBotR]];
-         boxEls.push(
-           <g key={k}>
-             <polygon points={ptsStr(wallFace)} fill={p.bg} stroke={p.border} strokeWidth="0.8"/>
-             <polygon points={ptsStr(topFace)}  fill={p.bg} stroke={p.border} strokeWidth="0.6" opacity="0.75"/>
-             <polygon points={ptsStr(sideFace)} fill={p.border} stroke={p.border} strokeWidth="0.4" opacity="0.65"/>
-             <text x={(x0+x1)/2} y={(yTopL+yBotL)/2+3} textAnchor="middle" fill={p.text} fontSize="6" fontWeight="700">{nm}</text>
-           </g>
-         );
-       }
-     }
-    return <g>{posts}{shelves}{boxEls}</g>;
-  }
-
-  function RightWallShelves(){
-    const rows=cfg.right.rows, cols=cfg.right.cols;
-    const shelves=[], posts=[], boxEls=[];
-    const thick=0.04;
-    // Right wall: col 0 = fondo (z=0=back), last col = ingresso (z=1=front)
-    // In WallGrid: right wall col 0 is on the LEFT = fondo side ✓
-    // Viewer sees right wall: left side=fondo(far/small), right side=ingresso(near/large)
-
-    const nPosts=Math.min(cols,5)+1;
-    for(let i=0;i<=nPosts;i++){
-      const z=i/nPosts;
-      const p0=proj(1,z); const p1=projTop(1,z);
-      posts.push(<line key={i} x1={p0[0]} y1={p0[1]} x2={p1[0]} y2={p1[1]} stroke="#90A4AE" strokeWidth={Math.max(1,3*(1-z))} opacity="0.8"/>);
-    }
-    for(let r=0;r<=rows;r++){
-      const ht=1-(r+0.15)/(rows+0.3);
-      const s=shelfPtsRight(0,1,ht,thick);
-      shelves.push(
-        <g key={r}>
-          <polygon points={ptsStr(s.top)} fill="#F4A942" stroke="#D4892A" strokeWidth="0.8"/>
-        </g>
-      );
-    }
-     for(let r=0;r<rows;r++){
-       const htShelf =1-(r+0.15)/(rows+0.3);
-       const htNext  =1-(r+1+0.15)/(rows+0.3);
-       const htBoxTop=htShelf-0.05;
-       const htBoxBot=htNext+0.01;
-       for(let c=0;c<cols;c++){
-         const k=`right:${r}:${c}`; const box=boxes[k]; if(!box) continue;
-         // col 0=fondo(z=1,far,x=fR), col last=ingresso(z=0,near,x=rX)
-         const z0=1-(c+0.88)/cols, z1=Math.max(1-c/cols, 0.02);
-         const p=boxPal(box.name);
-         const nm=box.name.length>4?box.name.slice(0,3)+"…":box.name;
-         const x0=proj(1,z0)[0], x1=proj(1,z1)[0];
-         const xL=Math.min(x0,x1), xR=Math.max(x0,x1);
-         const yBotL=lerp(proj(1,z0)[1],projTop(1,z0)[1],htBoxBot);
-         const yBotR=lerp(proj(1,z1)[1],projTop(1,z1)[1],htBoxBot);
-         const yTopL=lerp(proj(1,z0)[1],projTop(1,z0)[1],htBoxTop);
-         const yTopR=lerp(proj(1,z1)[1],projTop(1,z1)[1],htBoxTop);
-         const bH=Math.abs(yBotL-yTopL); if(bH<3) continue;
-         // Use x0<x1 ordering for right wall
-         const [ax,bx_]= x0<x1 ? [x0,x1] : [x1,x0];
-         const [ayTL,ayTR,ayBL,ayBR]= x0<x1
-           ? [yTopL,yTopR,yBotL,yBotR]
-           : [yTopR,yTopL,yBotR,yBotL];
-         const dX=bH*0.08; const dY=bH*0.12;
-         const wallFace=[[ax,ayTL],[bx_,ayTR],[bx_,ayBR],[ax,ayBL]];
-         const topFace =[[ax,ayTL],[bx_,ayTR],[bx_-dX,ayTR-dY],[ax-dX,ayTL-dY]];
-         const sideFace=[[ax,ayTL],[ax-dX,ayTL-dY],[ax-dX,ayBL-dY*0.3],[ax,ayBL]];
-         boxEls.push(
-           <g key={k}>
-             <polygon points={ptsStr(wallFace)} fill={p.bg} stroke={p.border} strokeWidth="0.8"/>
-             <polygon points={ptsStr(topFace)}  fill={p.bg} stroke={p.border} strokeWidth="0.6" opacity="0.75"/>
-             <polygon points={ptsStr(sideFace)} fill={p.border} stroke={p.border} strokeWidth="0.4" opacity="0.65"/>
-             <text x={(ax+bx_)/2} y={(ayTL+ayBL)/2+3} textAnchor="middle" fill={p.text} fontSize="6" fontWeight="700">{nm}</text>
-           </g>
-         );
-       }
-     }
-    return <g>{posts}{shelves}{boxEls}</g>;
-  }
-
-  function FondoWallShelves(){
-    const rows=cfg.fondo.rows, cols=cfg.fondo.cols;
-    const shelves=[], posts=[], boxEls=[];
-    // r=0 → TOP shelf (highest ripiano), r=rows-1 → Terra (bottom)
-    // y coordinate: fTop=top of back wall, fBot=bottom of back wall
-    // high ht (near 1) → y near fTop (SVG top = visually HIGH on wall)
-    // So for r=0 (top shelf): ht should be large → use 1-(r+0.15)/(rows+0.3)
-    for(let i=0;i<=cols;i++){
-      const x=lerp(fL,fR,i/cols);
-      posts.push(<line key={i} x1={x} y1={fTop} x2={x} y2={fBot} stroke="#90A4AE" strokeWidth="1.5" opacity="0.8"/>);
-    }
-    for(let r=0;r<=rows;r++){
-      const ht=1-(r+0.15)/(rows+0.3);  // r=0→near top, r=rows→near bottom
-      const y=lerp(fBot,fTop,ht);       // ht=1→fTop(high), ht=0→fBot(low)
-      shelves.push(<line key={r} x1={fL} y1={y} x2={fR} y2={y} stroke="#F4A942" strokeWidth="5"/>);
-      shelves.push(<line key={r+"d"} x1={fL} y1={y+5} x2={fR} y2={y+5} stroke="#C8892A" strokeWidth="2" opacity="0.6"/>);
-    }
+    // boxes
     for(let r=0;r<rows;r++){
+      const yT=boxTop(r,rows), yB=boxBot(r,rows);
       for(let c=0;c<cols;c++){
-        const k=`fondo:${r}:${c}`; const box=boxes[k]; if(!box) continue;
-        // Box sits BETWEEN shelf r (top boundary) and shelf r+1 (bottom boundary)
-        const htTop    = 1-(r+0.15)/(rows+0.3);
-        const htBottom = 1-(r+1+0.15)/(rows+0.3);
-        const yBoxTop  = lerp(fBot,fTop,htTop)+3;
-        const yShelf   = lerp(fBot,fTop,htBottom)-3;
-        const x0=lerp(fL,fR,c/cols)+2;
-        const x1=lerp(fL,fR,(c+0.9)/cols);
+        const k=`left:${r}:${c}`; const box=boxes[k]; if(!box) continue;
+        // col 0=ingresso(Z=0), col last=fondo(Z=RD)
+        const z0=c*cw, z1=(c+0.88)*cw;
         const p=boxPal(box.name);
         const nm=box.name.length>5?box.name.slice(0,4)+"…":box.name;
-        const bH=yShelf-yBoxTop-2;
-        const bW=x1-x0;
-        if(bH<3) continue;
-        // 3D effect: top face and right side face
-        const depth=Math.max(3, bW*0.15);
-        const dTop=depth*0.55;
-        // Front face
-        const frontPts=[[x0,yBoxTop],[x1,yBoxTop],[x1,yShelf],[x0,yShelf]];
-        // Top face (tilts upward/back)
-        const topPts=[[x0,yBoxTop],[x1,yBoxTop],[x1+depth,yBoxTop-dTop],[x0+depth,yBoxTop-dTop]];
-        // Right side face
-        const sidePts=[[x1,yBoxTop],[x1+depth,yBoxTop-dTop],[x1+depth,yShelf-dTop],[x1,yShelf]];
-        boxEls.push(
-          <g key={k}>
-            <polygon points={ptsStr([[x0+2,yShelf+2],[x1+2,yShelf+2],[x1+depth+2,yShelf-dTop+2],[x0+depth+2,yShelf-dTop+2]])} fill="rgba(0,0,0,0.10)"/>
-            <polygon points={ptsStr(frontPts)} fill={p.bg} stroke={p.border} strokeWidth="0.8"/>
-            <polygon points={ptsStr(topPts)} fill={p.bg} stroke={p.border} strokeWidth="0.8" opacity="0.7"/>
-            <polygon points={ptsStr(sidePts)} fill={p.border} stroke={p.border} strokeWidth="0.8" opacity="0.55"/>
-            <text x={(x0+x1)/2} y={yBoxTop+bH/2+3} textAnchor="middle" fill={p.text} fontSize="6" fontWeight="700">{nm}</text>
-          </g>
-        );
+        // Box faces (X goes 0→BOX_D into room)
+        const wFace=[[0,yT,z0],[0,yT,z1],[0,yB,z1],[0,yB,z0]];
+        const fFace=[[BOX_D,yT,z0],[BOX_D,yT,z1],[BOX_D,yB,z1],[BOX_D,yB,z0]];
+        const tFace=[[0,yT,z0],[0,yT,z1],[BOX_D,yT,z1],[BOX_D,yT,z0]];
+        const sFace=[[BOX_D,yT,z1],[0,yT,z1],[0,yB,z1],[BOX_D,yB,z1]];
+        const wp=wFace.map(p=>proj(...p));
+        const fp=fFace.map(p=>proj(...p));
+        const tp=tFace.map(p=>proj(...p));
+        const sp=sFace.map(p=>proj(...p));
+        const cx=(fp[0][0]+fp[1][0]+fp[2][0]+fp[3][0])/4;
+        const cy=(fp[0][1]+fp[1][1]+fp[2][1]+fp[3][1])/4;
+        els.push(<g key={k}>
+          <polygon points={ptsStr(wp)} fill={p.bg} stroke={p.border} strokeWidth="0.6" opacity="0.6"/>
+          <polygon points={ptsStr(fp)} fill={p.bg} stroke={p.border} strokeWidth="0.8"/>
+          <polygon points={ptsStr(tp)} fill={p.bg} stroke={p.border} strokeWidth="0.6" opacity="0.85"/>
+          <polygon points={ptsStr(sp)} fill={p.border} stroke={p.border} strokeWidth="0.4" opacity="0.7"/>
+          <text x={cx} y={cy+3} textAnchor="middle" fill={p.text} fontSize="6.5" fontWeight="700">{nm}</text>
+        </g>);
       }
     }
-    return <g>{posts}{shelves}{boxEls}</g>;
+    return <g>{els}</g>;
   }
 
-  // click zones
-  const leftPts=[[lX,bY],[fL,fBot],[fL,fTop],[lX,tY]];
-  const rightPts=[[rX,bY],[fR,fBot],[fR,fTop],[rX,tY]];
-  const fondoPts=[[fL,fTop],[fR,fTop],[fR,fBot],[fL,fBot]];
+  // ── Draw shelf boards on right wall ───────────────────────────────────────
+  function RightShelves(){
+    const rows=cfg.right.rows, cols=cfg.right.cols;
+    const cw=RD/cols;
+    const els=[];
+    for(let i=0;i<=Math.min(cols,5);i++){
+      const z=i*RD/Math.min(cols,5);
+      const [x0,y0]=proj(RW,0,z); const [x1,y1]=proj(RW,RH,z);
+      const w=Math.max(1,4*(1-z/RD));
+      els.push(<line key={"rp"+i} x1={x0} y1={y0} x2={x1} y2={y1} stroke="#90A4AE" strokeWidth={w} opacity="0.7"/>);
+    }
+    for(let r=0;r<=rows;r++){
+      const wy=shelfWY(r,rows);
+      const p0=proj(RW,wy,0), p1=proj(RW,wy,RD);
+      const p2=proj(RW,wy-0.06,RD), p3=proj(RW,wy-0.06,0);
+      els.push(<polygon key={"rs"+r} points={ptsStr([p0,p1,p2,p3])} fill="#F4A942" stroke="#D4892A" strokeWidth="0.8"/>);
+    }
+    for(let r=0;r<rows;r++){
+      const yT=boxTop(r,rows), yB=boxBot(r,rows);
+      for(let c=0;c<cols;c++){
+        const k=`right:${r}:${c}`; const box=boxes[k]; if(!box) continue;
+        // col 0=fondo(Z=RD), col last=ingresso(Z=0)
+        const z1=RD-c*cw, z0=RD-(c+0.88)*cw;
+        const p=boxPal(box.name);
+        const nm=box.name.length>5?box.name.slice(0,4)+"…":box.name;
+        const wFace=[[RW,yT,z0],[RW,yT,z1],[RW,yB,z1],[RW,yB,z0]];
+        const fFace=[[RW-BOX_D,yT,z0],[RW-BOX_D,yT,z1],[RW-BOX_D,yB,z1],[RW-BOX_D,yB,z0]];
+        const tFace=[[RW,yT,z0],[RW,yT,z1],[RW-BOX_D,yT,z1],[RW-BOX_D,yT,z0]];
+        const sFace=[[RW-BOX_D,yT,z0],[RW,yT,z0],[RW,yB,z0],[RW-BOX_D,yB,z0]];
+        const wp=wFace.map(p=>proj(...p));
+        const fp=fFace.map(p=>proj(...p));
+        const tp=tFace.map(p=>proj(...p));
+        const sp=sFace.map(p=>proj(...p));
+        const cx=(fp[0][0]+fp[1][0]+fp[2][0]+fp[3][0])/4;
+        const cy=(fp[0][1]+fp[1][1]+fp[2][1]+fp[3][1])/4;
+        els.push(<g key={k}>
+          <polygon points={ptsStr(wp)} fill={p.bg} stroke={p.border} strokeWidth="0.6" opacity="0.6"/>
+          <polygon points={ptsStr(fp)} fill={p.bg} stroke={p.border} strokeWidth="0.8"/>
+          <polygon points={ptsStr(tp)} fill={p.bg} stroke={p.border} strokeWidth="0.6" opacity="0.85"/>
+          <polygon points={ptsStr(sp)} fill={p.border} stroke={p.border} strokeWidth="0.4" opacity="0.7"/>
+          <text x={cx} y={cy+3} textAnchor="middle" fill={p.text} fontSize="6.5" fontWeight="700">{nm}</text>
+        </g>);
+      }
+    }
+    return <g>{els}</g>;
+  }
+
+  // ── Draw back wall (fondo) ─────────────────────────────────────────────────
+  function FondoShelves(){
+    const rows=cfg.fondo.rows, cols=cfg.fondo.cols;
+    const cw=RW/cols;
+    const els=[];
+    for(let i=0;i<=cols;i++){
+      const wx=i*cw;
+      const [x0,y0]=proj(wx,0,RD); const [x1,y1]=proj(wx,RH,RD);
+      els.push(<line key={"fp"+i} x1={x0} y1={y0} x2={x1} y2={y1} stroke="#90A4AE" strokeWidth="1.5" opacity="0.8"/>);
+    }
+    for(let r=0;r<=rows;r++){
+      const wy=shelfWY(r,rows);
+      const p0=proj(0,wy,RD), p1=proj(RW,wy,RD);
+      const p2=proj(RW,wy-0.06,RD), p3=proj(0,wy-0.06,RD);
+      els.push(<polygon key={"fbs"+r} points={ptsStr([p0,p1,p2,p3])} fill="#F4A942" stroke="#D4892A" strokeWidth="1"/>);
+    }
+    for(let r=0;r<rows;r++){
+      const yT=boxTop(r,rows), yB=boxBot(r,rows);
+      for(let c=0;c<cols;c++){
+        const k=`fondo:${r}:${c}`; const box=boxes[k]; if(!box) continue;
+        const wx0=c*cw, wx1=(c+0.9)*cw;
+        const p=boxPal(box.name);
+        const nm=box.name.length>5?box.name.slice(0,4)+"…":box.name;
+        const wFace=[[wx0,yT,RD],[wx1,yT,RD],[wx1,yB,RD],[wx0,yB,RD]];
+        const fFace=[[wx0,yT,RD-BOX_D],[wx1,yT,RD-BOX_D],[wx1,yB,RD-BOX_D],[wx0,yB,RD-BOX_D]];
+        const tFace=[[wx0,yT,RD],[wx1,yT,RD],[wx1,yT,RD-BOX_D],[wx0,yT,RD-BOX_D]];
+        const sFace=[[wx1,yT,RD],[wx1,yT,RD-BOX_D],[wx1,yB,RD-BOX_D],[wx1,yB,RD]];
+        const fp2=fFace.map(p=>proj(...p));
+        const tp=tFace.map(p=>proj(...p));
+        const sp=sFace.map(p=>proj(...p));
+        const cx=(fp2[0][0]+fp2[1][0]+fp2[2][0]+fp2[3][0])/4;
+        const cy=(fp2[0][1]+fp2[1][1]+fp2[2][1]+fp2[3][1])/4;
+        els.push(<g key={k}>
+          <polygon points={ptsStr(wFace.map(p=>proj(...p)))} fill={p.bg} stroke={p.border} strokeWidth="0.6" opacity="0.5"/>
+          <polygon points={ptsStr(fp2)} fill={p.bg} stroke={p.border} strokeWidth="0.8"/>
+          <polygon points={ptsStr(tp)} fill={p.bg} stroke={p.border} strokeWidth="0.6" opacity="0.85"/>
+          <polygon points={ptsStr(sp)} fill={p.border} stroke={p.border} strokeWidth="0.4" opacity="0.7"/>
+          <text x={cx} y={cy+3} textAnchor="middle" fill={p.text} fontSize="6.5" fontWeight="700">{nm}</text>
+        </g>);
+      }
+    }
+    return <g>{els}</g>;
+  }
+
+  // ── Room geometry points ───────────────────────────────────────────────────
+  const FL_=proj(0,0,0), FR=proj(RW,0,0), BL=proj(0,0,RD), BR=proj(RW,0,RD);
+  const CL_=proj(0,RH,0),CR=proj(RW,RH,0),CBL=proj(0,RH,RD),CBR=proj(RW,RH,RD);
+
+  // Wall click zones
+  const leftPts =[FL_,BL,CBL,CL_];
+  const rightPts=[FR,BR,CBR,CR];
+  const fondoPts=[BL,BR,CBR,CBL];
 
   const zones=[
-    {id:"left", pts:leftPts,  lx:lerp(lX,fL,0.45), ly:lerp(bY,fBot,0.45)-30, label:"SINISTRA"},
-    {id:"right",pts:rightPts, lx:lerp(rX,fR,0.45), ly:lerp(bY,fBot,0.45)-30, label:"DESTRA"},
-    {id:"fondo",pts:fondoPts, lx:(fL+fR)/2,         ly:(fTop+fBot)/2,          label:"FONDO"},
+    {id:"left", pts:leftPts,  lx:(FL_[0]+BL[0])/2,  ly:(FL_[1]+CL_[1])/2+20, label:"SINISTRA"},
+    {id:"right",pts:rightPts, lx:(FR[0]+BR[0])/2,   ly:(FR[1]+CR[1])/2+20,   label:"DESTRA"},
+    {id:"fondo",pts:fondoPts, lx:(BL[0]+BR[0])/2,   ly:(BL[1]+CBL[1])/2,     label:"FONDO"},
   ];
 
+  function nBox(w){return Object.keys(boxes).filter(k=>k.startsWith(w+":")).length;}
+
   return(
-    <svg viewBox={`0 0 ${W} ${H}`} style={{display:"block",width:"100%",borderRadius:16}}>
+    <svg viewBox={`0 0 ${W} ${H}`} style={{display:"block",width:"100%",borderRadius:16,background:"#F0F4F8"}}>
       <defs>
-        <pattern id="wallL" width="40" height="20" patternUnits="userSpaceOnUse">
-          <rect width="40" height="20" fill="#E8EDF5"/>
-          <rect width="40" height="20" fill="none" stroke="#D0D8E8" strokeWidth="0.4"/>
-          <rect x="0" y="0" width="20" height="10" fill="none" stroke="#D0D8E8" strokeWidth="0.3"/>
-          <rect x="20" y="10" width="20" height="10" fill="none" stroke="#D0D8E8" strokeWidth="0.3"/>
+        <pattern id="wallTile" width="48" height="24" patternUnits="userSpaceOnUse">
+          <rect width="48" height="24" fill="#E2E8F4"/>
+          <rect width="48" height="24" fill="none" stroke="#C8D0E4" strokeWidth="0.5"/>
+          <rect x="0" y="0" width="24" height="12" fill="none" stroke="#C8D0E4" strokeWidth="0.35"/>
+          <rect x="24" y="12" width="24" height="12" fill="none" stroke="#C8D0E4" strokeWidth="0.35"/>
         </pattern>
-        <pattern id="wallR" width="40" height="20" patternUnits="userSpaceOnUse">
-          <rect width="40" height="20" fill="#DDE3EF"/>
-          <rect width="40" height="20" fill="none" stroke="#C8D0E0" strokeWidth="0.4"/>
-          <rect x="0" y="0" width="20" height="10" fill="none" stroke="#C8D0E0" strokeWidth="0.3"/>
-          <rect x="20" y="10" width="20" height="10" fill="none" stroke="#C8D0E0" strokeWidth="0.3"/>
+        <pattern id="wallTileDark" width="48" height="24" patternUnits="userSpaceOnUse">
+          <rect width="48" height="24" fill="#D8E0F0"/>
+          <rect width="48" height="24" fill="none" stroke="#B8C4D8" strokeWidth="0.5"/>
+          <rect x="0" y="0" width="24" height="12" fill="none" stroke="#B8C4D8" strokeWidth="0.35"/>
+          <rect x="24" y="12" width="24" height="12" fill="none" stroke="#B8C4D8" strokeWidth="0.35"/>
         </pattern>
-        <pattern id="wallF" width="40" height="20" patternUnits="userSpaceOnUse">
-          <rect width="40" height="20" fill="#D4DCF0"/>
-          <rect width="40" height="20" fill="none" stroke="#C0CAE0" strokeWidth="0.4"/>
+        <pattern id="floorTile" width="55" height="55" patternUnits="userSpaceOnUse">
+          <rect width="55" height="55" fill="#C8D4E4"/>
+          <rect width="55" height="55" fill="none" stroke="#B0BCD0" strokeWidth="0.8"/>
+          <rect x="0" y="0" width="27" height="27" fill="#D0DCE8" opacity="0.5"/>
+          <rect x="27" y="27" width="27" height="27" fill="#D0DCE8" opacity="0.5"/>
         </pattern>
-        <pattern id="floorP" width="55" height="55" patternUnits="userSpaceOnUse">
-          <rect width="55" height="55" fill="#C8D2E0"/>
-          <rect width="55" height="55" fill="none" stroke="#B8C4D4" strokeWidth="0.8"/>
-          <rect x="0" y="0" width="27" height="27" fill="#D0DAE8" opacity="0.5"/>
-          <rect x="27" y="27" width="27" height="27" fill="#D0DAE8" opacity="0.5"/>
+        <pattern id="ceilTile" width="55" height="55" patternUnits="userSpaceOnUse">
+          <rect width="55" height="55" fill="#BCC8D8"/>
+          <rect width="55" height="55" fill="none" stroke="#A8B4C4" strokeWidth="0.5"/>
         </pattern>
-        <pattern id="ceilP" width="55" height="55" patternUnits="userSpaceOnUse">
-          <rect width="55" height="55" fill="#C0CAD8"/>
-          <rect width="55" height="55" fill="none" stroke="#B0BCCB" strokeWidth="0.5"/>
-        </pattern>
-        <filter id="ws"><feDropShadow dx="1" dy="1" stdDeviation="2" floodOpacity="0.12"/></filter>
-        <radialGradient id="lampG" cx="50%" cy="0%" r="80%">
-          <stop offset="0%" stopColor="#FFFDE7" stopOpacity="0.6"/>
-          <stop offset="100%" stopColor="#FFFDE7" stopOpacity="0"/>
+        <filter id="shadow"><feDropShadow dx="1" dy="1" stdDeviation="2" floodOpacity="0.1"/></filter>
+        <radialGradient id="lamp" cx="50%" cy="0%" r="70%">
+          <stop offset="0%" stopColor="#FFF9C4" stopOpacity="0.5"/>
+          <stop offset="100%" stopColor="#FFF9C4" stopOpacity="0"/>
         </radialGradient>
       </defs>
 
-      <rect width={W} height={H} fill="#F0F4F8"/>
-
-      {/* floor */}
-      <polygon points={`${lX},${bY} ${fL},${fBot} ${fR},${fBot} ${rX},${bY}`} fill="url(#floorP)"/>
       {/* ceiling */}
-      <polygon points={`${lX},${tY} ${fL},${fTop} ${fR},${fTop} ${rX},${tY}`} fill="url(#ceilP)"/>
+      <polygon points={ptsStr([CL_,CR,CBR,CBL])} fill="url(#ceilTile)"/>
       {/* left wall */}
-      <polygon points={ptsStr(leftPts)} fill="url(#wallL)" stroke="#C0CAD8" strokeWidth="0.8"/>
+      <polygon points={ptsStr(leftPts)} fill="url(#wallTile)" stroke="#B0BCCF" strokeWidth="0.8"/>
       {/* right wall */}
-      <polygon points={ptsStr(rightPts)} fill="url(#wallR)" stroke="#C0CAD8" strokeWidth="0.8"/>
+      <polygon points={ptsStr(rightPts)} fill="url(#wallTileDark)" stroke="#B0BCCF" strokeWidth="0.8"/>
       {/* back wall */}
-      <polygon points={ptsStr(fondoPts)} fill="url(#wallF)" stroke="#B0BCCB" strokeWidth="0.8"/>
+      <polygon points={ptsStr(fondoPts)} fill="#D0D8EC" stroke="#A8B4CC" strokeWidth="0.8"/>
+      {/* floor */}
+      <polygon points={ptsStr([FL_,FR,BR,BL])} fill="url(#floorTile)"/>
 
-      {/* perspective edge lines */}
-      <line x1={lX} y1={tY} x2={fL} y2={fTop} stroke="#A0AEBE" strokeWidth="1"/>
-      <line x1={rX} y1={tY} x2={fR} y2={fTop} stroke="#A0AEBE" strokeWidth="1"/>
-      <line x1={lX} y1={bY} x2={fL} y2={fBot} stroke="#A0AEBE" strokeWidth="1"/>
-      <line x1={rX} y1={bY} x2={fR} y2={fBot} stroke="#A0AEBE" strokeWidth="1"/>
-      <line x1={fL} y1={fTop} x2={fR} y2={fTop} stroke="#A0AEBE" strokeWidth="1"/>
-      <line x1={fL} y1={fBot} x2={fR} y2={fBot} stroke="#A0AEBE" strokeWidth="1"/>
-      <line x1={fL} y1={fTop} x2={fL} y2={fBot} stroke="#A0AEBE" strokeWidth="1"/>
-      <line x1={fR} y1={fTop} x2={fR} y2={fBot} stroke="#A0AEBE" strokeWidth="1"/>
+      {/* perspective edges */}
+      {[FL_,FR,CL_,CR].map(([x,y],i)=>{
+        const [bx,by]=[BL,BR,CBL,CBR][i];
+        return <line key={i} x1={x} y1={y} x2={bx} y2={by} stroke="#A0AEBE" strokeWidth="0.8"/>;
+      })}
+      <line x1={BL[0]} y1={BL[1]} x2={BR[0]} y2={BR[1]} stroke="#A0AEBE" strokeWidth="0.8"/>
+      <line x1={CBL[0]} y1={CBL[1]} x2={CBR[0]} y2={CBR[1]} stroke="#A0AEBE" strokeWidth="0.8"/>
 
-      {/* lamp glow */}
-      <ellipse cx={vpX} cy={tY+10} rx={180} ry={60} fill="url(#lampG)"/>
-      {/* lamp fixture */}
-      <rect x={vpX-4} y={tY} width={8} height={20} fill="#90A4AE" rx="2"/>
-      <rect x={vpX-55} y={tY+20} width={110} height={12} fill="#FFFDE7" rx="3" stroke="#F9A825" strokeWidth="0.8"/>
-      <rect x={vpX-50} y={tY+21} width={100} height={4} fill="rgba(255,255,255,0.7)" rx="2"/>
+      {/* lamp */}
+      <ellipse cx={W/2} cy={CL_[1]+20} rx={160} ry={35} fill="url(#lamp)"/>
+      <rect x={W/2-4} y={CL_[1]-4} width={8} height={24} fill="#90A4AE" rx="2"/>
+      <rect x={W/2-58} y={CL_[1]+20} width={116} height={13} fill="#FFFDE7" rx="3" stroke="#F9A825" strokeWidth="0.8"/>
+      <rect x={W/2-54} y={CL_[1]+21} width={108} height={4} fill="rgba(255,255,255,0.7)" rx="2"/>
 
-      {/* shelves */}
-      <LeftWallShelves/>
-      <RightWallShelves/>
-      <FondoWallShelves/>
+      {/* shelves and boxes */}
+      <LeftShelves/>
+      <RightShelves/>
+      <FondoShelves/>
 
       {/* click zones */}
       {zones.map(({id,pts,lx,ly,label})=>{
-        const n=nBox(id),isH=hov===id,ps=pts.map(p=>p.join(",")).join(" ");
+        const n=nBox(id), isH=hov===id;
         const chipW=n>0?94:80;
+        const ps=ptsStr(pts);
         return(
           <g key={id} style={{cursor:"pointer"}}
              onMouseEnter={()=>setHov(id)} onMouseLeave={()=>setHov(null)}
              onClick={()=>onWall(id)}>
-            <polygon points={ps} fill={isH?"rgba(49,130,206,0.10)":"transparent"} stroke={isH?T.blue:"transparent"} strokeWidth="2"/>
+            <polygon points={ps} fill={isH?"rgba(49,130,206,0.10)":"transparent"} stroke={isH?"#3182CE":"transparent"} strokeWidth="2"/>
             <rect x={lx-chipW/2} y={ly-14} width={chipW} height={28} rx="14"
-              fill={isH?T.blue:"white"} stroke={isH?T.blue:T.border} strokeWidth="1.5" filter="url(#ws)"/>
+              fill={isH?"#3182CE":"white"} stroke={isH?"#3182CE":"#DDE3EC"} strokeWidth="1.5" filter="url(#shadow)"/>
             <text x={lx-(n>0?8:0)} y={ly+5} textAnchor="middle"
-              fill={isH?"white":T.textMid} fontSize="9.5" fontWeight="700" letterSpacing="0.06em">{label}</text>
+              fill={isH?"white":"#4A5568"} fontSize="10" fontWeight="700" letterSpacing="0.06em">{label}</text>
             {n>0&&(<>
-              <rect x={lx+chipW/2-25} y={ly-10} width={20} height={20} rx="10" fill={isH?"rgba(255,255,255,0.3)":T.orange}/>
-              <text x={lx+chipW/2-15} y={ly+5} textAnchor="middle" fill="white" fontSize="9" fontWeight="700">{n}</text>
+              <rect x={lx+chipW/2-25} y={ly-10} width={20} height={20} rx="10" fill={isH?"rgba(255,255,255,0.3)":"#ED8936"}/>
+              <text x={lx+chipW/2-15} y={ly+5} textAnchor="middle" fill="white" fontSize="9.5" fontWeight="700">{n}</text>
             </>)}
           </g>
         );
       })}
 
-      <text x={W/2} y={H-6} textAnchor="middle" fill={T.textMute} fontSize="9.5">clicca su una parete per aprirla</text>
+      <text x={W/2} y={H-6} textAnchor="middle" fill="#A0AEC0" fontSize="10">clicca su una parete per aprirla</text>
     </svg>
   );
 }
 
-// ── WALL GRID ─────────────────────────────────────────────────────────────────
+
+
 function WallGrid({wall,cfgW,boxes,searchKeys,onSlot,moveSource,onMoveStart}){
   const {rows,cols}=cfgW;
   function rowLbl(r){const i=rows-1-r;return i===0?"T":`R${i}`;}
