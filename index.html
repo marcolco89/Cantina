@@ -481,7 +481,7 @@ function WallGrid({wall,cfgW,boxes,searchKeys,onSlot,moveSource,onMoveStart}){
   const {rows,cols}=cfgW;
   function rowLbl(r){const i=rows-1-r;return i===0?"T":`R${i}`;}
   const colOrder=Array.from({length:cols},(_,i)=>i);
-  const fondoLabel = wall==="left"?"ingresso ← · → fondo":
+  const fondoLabel = wall==="left"?"← fondo · ingresso →":
                      wall==="right"?"← fondo · ingresso →":null;
   return(
     <div style={{display:"flex",flexDirection:"column",gap:6}}>
