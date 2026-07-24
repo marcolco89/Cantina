@@ -537,56 +537,52 @@ function WallGrid({wall,cfgW,boxes,searchKeys,onSlot,moveSource,onMoveStart}){
               {colOrder.map(c=>{
                 const k=`${wall}:${r}:${c}`,box=boxes[k],isHL=searchKeys.includes(k);
                 const p=box?boxPal(box.name):null;
+                const isMoveSrc=moveSource===k;
+                const isMoveMode=!!moveSource;
+                const isValidDst=isMoveMode&&!isMoveSrc;
+                const slotBorder=isMoveSrc?`2px solid ${T.blue}`:
+                                 isHL?`2px solid ${T.red}`:
+                                 isValidDst&&!box?`1.5px dashed ${T.blue}`:
+                                 isValidDst&&box?`1.5px solid ${T.orange}`:
+                                 box?`1.5px solid ${p?p.border:T.border}`:`1.5px dashed ${T.borderHi}`;
+                const slotBg=isMoveSrc?T.blueLight:
+                             isHL?"#FEE2E2":
+                             isValidDst&&!box?"#EBF8FF":
+                             isValidDst&&box?"#FFFAF0":
+                             box&&p?p.bg:"white";
                 return(
-                  {(()=>{
-                    const isMoveSrc=moveSource===k;
-                    const isMoveMode=!!moveSource;
-                    const isValidDst=isMoveMode && !isMoveSrc;
-                    const slotBorder=isMoveSrc?`2px solid ${T.blue}`:
-                                     isHL?`2px solid ${T.red}`:
-                                     isValidDst&&!box?`1.5px dashed ${T.blue}`:
-                                     isValidDst&&box?`1.5px solid ${T.orange}`:
-                                     box?`1.5px solid ${p?.border}`:`1.5px dashed ${T.borderHi}`;
-                    const slotBg=isMoveSrc?T.blueLight:
-                                 isHL?"#FEE2E2":
-                                 isValidDst&&!box?"#EBF8FF":
-                                 isValidDst&&box?"#FFFAF0":
-                                 box?p?.bg:"white";
-                    return(
-                      <div key={c}
-                        onClick={()=>onSlot(k,wall,r,c)}
-                        title={isMoveSrc?"Clicca per annullare":isValidDst?"Sposta qui":box?`[col.${c+1}] ${box.name}`:`[col.${c+1}] Aggiungi scatola`}
-                        style={{
-                          width:54,minWidth:54,height:54,borderRadius:10,cursor:"pointer",flexShrink:0,
-                          border:slotBorder, background:slotBg,
-                          display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
-                          position:"relative",transition:"all 0.12s",
-                          boxShadow:isMoveSrc?`0 0 0 3px ${T.blue}44`:box?T.shadow:"none",
-                        }}
-                        onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=isMoveSrc?`0 0 0 3px ${T.blue}44`:T.shadowMd;}}
-                        onMouseLeave={e=>{e.currentTarget.style.transform="";e.currentTarget.style.boxShadow=isMoveSrc?`0 0 0 3px ${T.blue}44`:box?T.shadow:"none";}}>
-                        {isMoveSrc&&(
-                          <span style={{position:"absolute",top:-8,left:"50%",transform:"translateX(-50%)",fontSize:9,background:T.blue,color:"white",borderRadius:6,padding:"1px 5px",whiteSpace:"nowrap",fontWeight:600}}>in mossa</span>
-                        )}
-                        {box?(
-                          <>
-                            <span style={{fontSize:8,fontWeight:700,color:p?.text,textAlign:"center",lineHeight:1.2,padding:"0 3px",wordBreak:"break-word",maxWidth:50}}>
-                              {box.name.length>9?box.name.slice(0,8)+"…":box.name}
-                            </span>
-                            {box.items.length>0&&<span style={{position:"absolute",top:3,right:4,fontSize:8,color:T.orange,fontWeight:700}}>{box.items.length}</span>}
-                            {!isMoveMode&&<button
-                              onClick={e=>{e.stopPropagation();onMoveStart(k);}}
-                              title="Sposta scatola"
-                              style={{position:"absolute",bottom:2,right:2,background:"none",border:"none",cursor:"pointer",fontSize:11,color:T.textMute,padding:0,lineHeight:1}}
-                              onMouseEnter={e=>{e.currentTarget.style.color=T.blue;}}
-                              onMouseLeave={e=>{e.currentTarget.style.color=T.textMute;}}>✥</button>}
-                          </>
-                        ):(
-                          <span style={{color:isMoveMode?T.blue:T.textMute,fontSize:isMoveMode?18:22,lineHeight:1,fontWeight:200}}>{isMoveMode?"→":"+"}</span>
-                        )}
-                      </div>
-                    );
-                  })()}
+                  <div key={c}
+                    onClick={()=>onSlot(k,wall,r,c)}
+                    title={isMoveSrc?"Clicca per annullare":isValidDst?"Sposta qui":box?`[col.${c+1}] ${box.name}`:`[col.${c+1}] Aggiungi scatola`}
+                    style={{
+                      width:54,minWidth:54,height:54,borderRadius:10,cursor:"pointer",flexShrink:0,
+                      border:slotBorder,background:slotBg,
+                      display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+                      position:"relative",transition:"all 0.12s",
+                      boxShadow:isMoveSrc?`0 0 0 3px ${T.blue}44`:box?T.shadow:"none",
+                    }}
+                    onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=isMoveSrc?`0 0 0 3px ${T.blue}44`:T.shadowMd;}}
+                    onMouseLeave={e=>{e.currentTarget.style.transform="";e.currentTarget.style.boxShadow=isMoveSrc?`0 0 0 3px ${T.blue}44`:box?T.shadow:"none";}}>
+                    {isMoveSrc&&(
+                      <span style={{position:"absolute",top:-8,left:"50%",transform:"translateX(-50%)",fontSize:9,background:T.blue,color:"white",borderRadius:6,padding:"1px 5px",whiteSpace:"nowrap",fontWeight:600}}>in mossa</span>
+                    )}
+                    {box?(
+                      <>
+                        <span style={{fontSize:8,fontWeight:700,color:p?p.text:T.text,textAlign:"center",lineHeight:1.2,padding:"0 3px",wordBreak:"break-word",maxWidth:50}}>
+                          {box.name.length>9?box.name.slice(0,8)+"…":box.name}
+                        </span>
+                        {box.items.length>0&&<span style={{position:"absolute",top:3,right:4,fontSize:8,color:T.orange,fontWeight:700}}>{box.items.length}</span>}
+                        {!isMoveMode&&<button
+                          onClick={e=>{e.stopPropagation();onMoveStart(k);}}
+                          title="Sposta scatola"
+                          style={{position:"absolute",bottom:2,right:2,background:"none",border:"none",cursor:"pointer",fontSize:11,color:T.textMute,padding:0,lineHeight:1}}
+                          onMouseEnter={e=>{e.currentTarget.style.color=T.blue;}}
+                          onMouseLeave={e=>{e.currentTarget.style.color=T.textMute;}}>✥</button>}
+                      </>
+                    ):(
+                      <span style={{color:isMoveMode?T.blue:T.textMute,fontSize:isMoveMode?18:22,lineHeight:1,fontWeight:200}}>{isMoveMode?"→":"+"}</span>
+                    )}
+                  </div>
                 );
               })}
             </div>
