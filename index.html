@@ -205,13 +205,13 @@ function Scene3D({boxes,cfg,onWall}){
     }
 
     // LEFT WALL — 3D boxes
-    // col 0=fondo(z=1 far), col cols-1=ingresso(z=0 near)
+    // col 0=ingresso(z=0 near), col cols-1=fondo(z=1 far)
     for(let r=0;r<rows;r++){
       for(let c=0;c<cols;c++){
         const k=`left:${r}:${c}`; const box=boxes[k]; if(!box) continue;
         const htTop    =1-(r+0.15)/(rows+0.3);
         const htBottom =1-(r+1+0.15)/(rows+0.3);
-        const z0=1-(c+0.88)/cols, z1=1-c/cols;
+        const z0=c/cols, z1=Math.min((c+0.88)/cols,0.98);
         const p=boxPal(box.name);
         const nm=box.name.length>4?box.name.slice(0,3)+"…":box.name;
         const yShelf0=lerp(proj(0,z0)[1],projTop(0,z0)[1],htBottom)+2;
@@ -481,7 +481,7 @@ function WallGrid({wall,cfgW,boxes,searchKeys,onSlot,moveSource,onMoveStart}){
   const {rows,cols}=cfgW;
   function rowLbl(r){const i=rows-1-r;return i===0?"T":`R${i}`;}
   const colOrder=Array.from({length:cols},(_,i)=>i);
-  const fondoLabel = wall==="left"?"← fondo · ingresso →":
+  const fondoLabel = wall==="left"?"ingresso ← · → fondo":
                      wall==="right"?"← fondo · ingresso →":null;
   return(
     <div style={{display:"flex",flexDirection:"column",gap:6}}>
