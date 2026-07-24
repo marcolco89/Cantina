@@ -174,12 +174,13 @@ function Scene3D({boxes,cfg,onWall}){
   // render left wall shelves in perspective
   function LeftWallShelves(){
     const rows=cfg.left.rows, cols=cfg.left.cols;
-    const shelves=[];
-    const posts=[];
-    const boxEls=[];
+    const shelves=[], posts=[], boxEls=[];
     const thick=0.04;
+    // Left wall: col 0 = fondo (z=0=back), last col = ingresso (z=1=front)
+    // In WallGrid: left wall col 0 is on the LEFT = fondo side ✓
+    // Viewer stands at z=1 (ingresso) looking toward z=0 (fondo)
+    // So col 0 appears SMALL/FAR (back), last col appears LARGE/NEAR (front)
 
-    // upright posts along left wall
     const nPosts=Math.min(cols,5)+1;
     for(let i=0;i<=nPosts;i++){
       const z=i/nPosts;
@@ -187,10 +188,13 @@ function Scene3D({boxes,cfg,onWall}){
       posts.push(<line key={i} x1={p0[0]} y1={p0[1]} x2={p1[0]} y2={p1[1]} stroke="#90A4AE" strokeWidth={Math.max(1,3*(1-z))} opacity="0.8"/>);
     }
 
-    // shelf boards
+    // shelf boards — r=0 is TOP shelf (R_max label), r=rows-1 is BOTTOM (Terra)
+    // ht=0 → bottom (Terra), ht=1 → top ceiling
+    // r=0 → ht near 1 → top shelf (correct: R_max is highest)
+    // r=rows-1 → ht near 0 → bottom shelf = Terra (correct)
     for(let r=0;r<=rows;r++){
-      const ht=(r+0.15)/(rows+0.3);
-      const s=shelfPtsLeft(0,1,1-ht,thick);
+      const ht=1-(r+0.15)/(rows+0.3);  // r=0→high, r=rows→low
+      const s=shelfPtsLeft(0,1,ht,thick);
       shelves.push(
         <g key={r}>
           <polygon points={ptsStr(s.top)} fill="#F4A942" stroke="#D4892A" strokeWidth="0.8"/>
@@ -199,24 +203,46 @@ function Scene3D({boxes,cfg,onWall}){
       );
     }
 
-    // boxes on shelves
+    // LEFT WALL — 3D boxes
+    // col 0=fondo(z=1 far), col cols-1=ingresso(z=0 near)
     for(let r=0;r<rows;r++){
       for(let c=0;c<cols;c++){
         const k=`left:${r}:${c}`; const box=boxes[k]; if(!box) continue;
-        const ht0=(r+0.15)/(rows+0.3);
-        const ht1=(r+1+0.15)/(rows+0.3);
-        const z0=c/cols, z1=(c+0.85)/cols;
+        const htShelf =1-(r+0.15)/(rows+0.3);
+        const htBoxTop=1-(r+0.85)/(rows+0.3);
+        const z0=1-(c+0.88)/cols, z1=1-c/cols;
         const p=boxPal(box.name);
         const nm=box.name.length>4?box.name.slice(0,3)+"…":box.name;
-        const yShelf0=lerp(proj(0,z0)[1],projTop(0,z0)[1],1-ht0);
-        const yShelf1=lerp(proj(0,z1)[1],projTop(0,z1)[1],1-ht0);
-        const yTop0=lerp(proj(0,z0)[1],projTop(0,z0)[1],1-ht1+0.02);
-        const yTop1=lerp(proj(0,z1)[1],projTop(0,z1)[1],1-ht1+0.02);
+        // Four corners of front face (the face we see on the wall)
+        const yShelf0=lerp(proj(0,z0)[1],projTop(0,z0)[1],htShelf);
+        const yShelf1=lerp(proj(0,z1)[1],projTop(0,z1)[1],htShelf);
+        const yTop0  =lerp(proj(0,z0)[1],projTop(0,z0)[1],htBoxTop);
+        const yTop1  =lerp(proj(0,z1)[1],projTop(0,z1)[1],htBoxTop);
         const x0=proj(0,z0)[0], x1=proj(0,z1)[0];
-        const bpts=[[x0,yTop0],[x1,yTop1],[x1,yShelf1],[x0,yShelf0]];
+        const bH=yShelf0-yTop0; if(bH<3) continue;
+        const bW=x1-x0;
+        // Depth offset — boxes stick out from the wall toward viewer (right/positive x direction)
+        const depth=Math.max(4, bW*0.18);
+        const dTop=depth*0.5; // top face foreshortening
+        // Front face (on the wall surface)
+        const frontPts=[[x0,yTop0],[x1,yTop1],[x1,yShelf1],[x0,yShelf0]];
+        // Top face (above front, tilted)
+        const topPts=[[x0,yTop0],[x1,yTop1],[x1+depth,yTop1-dTop],[x0+depth,yTop0-dTop]];
+        // Right side face (near viewer side)
+        const sidePts=[[x1,yTop1],[x1+depth,yTop1-dTop],[x1+depth,yShelf1-dTop+depth*0.1],[x1,yShelf1]];
+        // Darken colors for top/side
+        const topFill=p.bg; const sideFill=p.border;
         boxEls.push(
           <g key={k}>
-            <polygon points={ptsStr(bpts)} fill={p.bg} stroke={p.border} strokeWidth="1"/>
+            {/* shadow */}
+            <polygon points={ptsStr([[x0+2,yShelf0+2],[x1+2,yShelf1+2],[x1+depth+2,yShelf1-dTop+depth*0.1+2],[x0+depth+2,yShelf0-dTop+depth*0.1+2]])} fill="rgba(0,0,0,0.10)"/>
+            {/* front face */}
+            <polygon points={ptsStr(frontPts)} fill={p.bg} stroke={p.border} strokeWidth="0.8"/>
+            {/* top face */}
+            <polygon points={ptsStr(topPts)} fill={topFill} stroke={p.border} strokeWidth="0.8" opacity="0.75"/>
+            {/* right side face */}
+            <polygon points={ptsStr(sidePts)} fill={sideFill} stroke={p.border} strokeWidth="0.8" opacity="0.6"/>
+            {/* label on front */}
             <text x={(x0+x1)/2} y={(yTop0+yShelf0)/2+3} textAnchor="middle" fill={p.text} fontSize="6" fontWeight="700">{nm}</text>
           </g>
         );
@@ -229,6 +255,10 @@ function Scene3D({boxes,cfg,onWall}){
     const rows=cfg.right.rows, cols=cfg.right.cols;
     const shelves=[], posts=[], boxEls=[];
     const thick=0.04;
+    // Right wall: col 0 = fondo (z=0=back), last col = ingresso (z=1=front)
+    // In WallGrid: right wall col 0 is on the LEFT = fondo side ✓
+    // Viewer sees right wall: left side=fondo(far/small), right side=ingresso(near/large)
+
     const nPosts=Math.min(cols,5)+1;
     for(let i=0;i<=nPosts;i++){
       const z=i/nPosts;
@@ -236,8 +266,8 @@ function Scene3D({boxes,cfg,onWall}){
       posts.push(<line key={i} x1={p0[0]} y1={p0[1]} x2={p1[0]} y2={p1[1]} stroke="#90A4AE" strokeWidth={Math.max(1,3*(1-z))} opacity="0.8"/>);
     }
     for(let r=0;r<=rows;r++){
-      const ht=(r+0.15)/(rows+0.3);
-      const s=shelfPtsRight(0,1,1-ht,thick);
+      const ht=1-(r+0.15)/(rows+0.3);
+      const s=shelfPtsRight(0,1,ht,thick);
       shelves.push(
         <g key={r}>
           <polygon points={ptsStr(s.top)} fill="#F4A942" stroke="#D4892A" strokeWidth="0.8"/>
@@ -247,20 +277,36 @@ function Scene3D({boxes,cfg,onWall}){
     for(let r=0;r<rows;r++){
       for(let c=0;c<cols;c++){
         const k=`right:${r}:${c}`; const box=boxes[k]; if(!box) continue;
-        const ht0=(r+0.15)/(rows+0.3);
-        const ht1=(r+1+0.15)/(rows+0.3);
-        const z0=c/cols, z1=(c+0.85)/cols;
+        // RIGHT WALL — 3D boxes
+        // r=0=top shelf, r=rows-1=Terra
+        const htShelf =1-(r+0.15)/(rows+0.3);
+        const htBoxTop=1-(r+0.85)/(rows+0.3);
+        // col 0=fondo(z=1 far), col cols-1=ingresso(z=0 near)
+        const z0=1-(c+0.88)/cols, z1=1-c/cols;
         const p=boxPal(box.name);
         const nm=box.name.length>4?box.name.slice(0,3)+"…":box.name;
-        const yShelf0=lerp(proj(1,z0)[1],projTop(1,z0)[1],1-ht0);
-        const yShelf1=lerp(proj(1,z1)[1],projTop(1,z1)[1],1-ht0);
-        const yTop0=lerp(proj(1,z0)[1],projTop(1,z0)[1],1-ht1+0.02);
-        const yTop1=lerp(proj(1,z1)[1],projTop(1,z1)[1],1-ht1+0.02);
+        const yShelf0=lerp(proj(1,z0)[1],projTop(1,z0)[1],htShelf);
+        const yShelf1=lerp(proj(1,z1)[1],projTop(1,z1)[1],htShelf);
+        const yTop0  =lerp(proj(1,z0)[1],projTop(1,z0)[1],htBoxTop);
+        const yTop1  =lerp(proj(1,z1)[1],projTop(1,z1)[1],htBoxTop);
         const x0=proj(1,z0)[0], x1=proj(1,z1)[0];
-        const bpts=[[x0,yTop0],[x1,yTop1],[x1,yShelf1],[x0,yShelf0]];
+        const bH=yShelf0-yTop0; if(bH<3) continue;
+        const bW=Math.abs(x1-x0);
+        // Depth sticks out to the LEFT (toward viewer) for right wall
+        const depth=Math.max(4, bW*0.18);
+        const dTop=depth*0.5;
+        // Front face
+        const frontPts=[[x0,yTop0],[x1,yTop1],[x1,yShelf1],[x0,yShelf0]];
+        // Top face
+        const topPts=[[x0,yTop0],[x1,yTop1],[x1-depth,yTop1-dTop],[x0-depth,yTop0-dTop]];
+        // Left side face (near viewer)
+        const sidePts=[[x0,yTop0],[x0-depth,yTop0-dTop],[x0-depth,yShelf0-dTop+depth*0.1],[x0,yShelf0]];
         boxEls.push(
           <g key={k}>
-            <polygon points={ptsStr(bpts)} fill={p.bg} stroke={p.border} strokeWidth="1"/>
+            <polygon points={ptsStr([[x0-2,yShelf0+2],[x1-2,yShelf1+2],[x1-depth-2,yShelf1-dTop+depth*0.1+2],[x0-depth-2,yShelf0-dTop+depth*0.1+2]])} fill="rgba(0,0,0,0.10)"/>
+            <polygon points={ptsStr(frontPts)} fill={p.bg} stroke={p.border} strokeWidth="0.8"/>
+            <polygon points={ptsStr(topPts)} fill={p.bg} stroke={p.border} strokeWidth="0.8" opacity="0.75"/>
+            <polygon points={ptsStr(sidePts)} fill={p.border} stroke={p.border} strokeWidth="0.8" opacity="0.6"/>
             <text x={(x0+x1)/2} y={(yTop0+yShelf0)/2+3} textAnchor="middle" fill={p.text} fontSize="6" fontWeight="700">{nm}</text>
           </g>
         );
@@ -272,31 +318,52 @@ function Scene3D({boxes,cfg,onWall}){
   function FondoWallShelves(){
     const rows=cfg.fondo.rows, cols=cfg.fondo.cols;
     const shelves=[], posts=[], boxEls=[];
+    // r=0 → TOP shelf (highest ripiano), r=rows-1 → Terra (bottom)
+    // y coordinate: fTop=top of back wall, fBot=bottom of back wall
+    // high ht (near 1) → y near fTop (SVG top = visually HIGH on wall)
+    // So for r=0 (top shelf): ht should be large → use 1-(r+0.15)/(rows+0.3)
     for(let i=0;i<=cols;i++){
       const x=lerp(fL,fR,i/cols);
       posts.push(<line key={i} x1={x} y1={fTop} x2={x} y2={fBot} stroke="#90A4AE" strokeWidth="1.5" opacity="0.8"/>);
     }
     for(let r=0;r<=rows;r++){
-      const ht=(r+0.15)/(rows+0.3);
-      const y=lerp(fBot,fTop,ht);
+      const ht=1-(r+0.15)/(rows+0.3);  // r=0→near top, r=rows→near bottom
+      const y=lerp(fBot,fTop,ht);       // ht=1→fTop(high), ht=0→fBot(low)
       shelves.push(<line key={r} x1={fL} y1={y} x2={fR} y2={y} stroke="#F4A942" strokeWidth="5"/>);
       shelves.push(<line key={r+"d"} x1={fL} y1={y+5} x2={fR} y2={y+5} stroke="#C8892A" strokeWidth="2" opacity="0.6"/>);
     }
     for(let r=0;r<rows;r++){
       for(let c=0;c<cols;c++){
         const k=`fondo:${r}:${c}`; const box=boxes[k]; if(!box) continue;
-        const ht0=(r+0.15)/(rows+0.3);
-        const ht1=(r+1+0.15)/(rows+0.3);
-        const yBot=lerp(fBot,fTop,ht0);
-        const yTop2=lerp(fBot,fTop,ht1)+6;
+        // r=0 → top shelf → yShelf (shelf line) high on wall, yBoxTop above it
+        // FONDO WALL — 3D boxes (viewed straight on, depth goes toward viewer)
+        const htShelf = 1-(r+0.15)/(rows+0.3);
+        const htBoxTop= 1-(r+0.85)/(rows+0.3);
+        const yShelf  = lerp(fBot,fTop,htShelf);
+        const yBoxTop = lerp(fBot,fTop,htBoxTop)+2;
         const x0=lerp(fL,fR,c/cols)+2;
         const x1=lerp(fL,fR,(c+0.9)/cols);
         const p=boxPal(box.name);
         const nm=box.name.length>5?box.name.slice(0,4)+"…":box.name;
+        const bH=yShelf-yBoxTop-2;
+        const bW=x1-x0;
+        if(bH<3) return null;
+        // 3D effect: top face and right side face
+        const depth=Math.max(3, bW*0.15);
+        const dTop=depth*0.55;
+        // Front face
+        const frontPts=[[x0,yBoxTop],[x1,yBoxTop],[x1,yShelf],[x0,yShelf]];
+        // Top face (tilts upward/back)
+        const topPts=[[x0,yBoxTop],[x1,yBoxTop],[x1+depth,yBoxTop-dTop],[x0+depth,yBoxTop-dTop]];
+        // Right side face
+        const sidePts=[[x1,yBoxTop],[x1+depth,yBoxTop-dTop],[x1+depth,yShelf-dTop],[x1,yShelf]];
         boxEls.push(
           <g key={k}>
-            <rect x={x0} y={yTop2} width={x1-x0} height={yBot-yTop2-2} fill={p.bg} stroke={p.border} strokeWidth="0.8" rx="2"/>
-            <text x={(x0+x1)/2} y={(yTop2+yBot)/2+3} textAnchor="middle" fill={p.text} fontSize="6" fontWeight="700">{nm}</text>
+            <polygon points={ptsStr([[x0+2,yShelf+2],[x1+2,yShelf+2],[x1+depth+2,yShelf-dTop+2],[x0+depth+2,yShelf-dTop+2]])} fill="rgba(0,0,0,0.10)"/>
+            <polygon points={ptsStr(frontPts)} fill={p.bg} stroke={p.border} strokeWidth="0.8"/>
+            <polygon points={ptsStr(topPts)} fill={p.bg} stroke={p.border} strokeWidth="0.8" opacity="0.7"/>
+            <polygon points={ptsStr(sidePts)} fill={p.border} stroke={p.border} strokeWidth="0.8" opacity="0.55"/>
+            <text x={(x0+x1)/2} y={yBoxTop+bH/2+3} textAnchor="middle" fill={p.text} fontSize="6" fontWeight="700">{nm}</text>
           </g>
         );
       }
@@ -413,15 +480,11 @@ function Scene3D({boxes,cfg,onWall}){
 }
 
 // ── WALL GRID ─────────────────────────────────────────────────────────────────
-function WallGrid({wall,cfgW,boxes,searchKeys,onSlot}){
+function WallGrid({wall,cfgW,boxes,searchKeys,onSlot,moveSource,onMoveStart}){
   const {rows,cols}=cfgW;
   function rowLbl(r){const i=rows-1-r;return i===0?"T":`R${i}`;}
-  // For left/right walls: col 0 = back (fondo), last col = ingresso
-  // In the front view we show col 0 on the LEFT (= fondo side)
-  // so display order is: 0,1,2,...,cols-1 (left=fondo, right=ingresso)
-  // This matches the 3D view where z=0 is back wall
   const colOrder=Array.from({length:cols},(_,i)=>i);
-  const fondoLabel = wall==="left"?"← fondo · ingresso →":
+  const fondoLabel = wall==="left"?"ingresso ← · → fondo":
                      wall==="right"?"← fondo · ingresso →":null;
   return(
     <div style={{display:"flex",flexDirection:"column",gap:6}}>
@@ -468,28 +531,55 @@ function WallGrid({wall,cfgW,boxes,searchKeys,onSlot}){
                 const k=`${wall}:${r}:${c}`,box=boxes[k],isHL=searchKeys.includes(k);
                 const p=box?boxPal(box.name):null;
                 return(
-                  <div key={c} onClick={()=>onSlot(k,wall,r,c)} title={box?`[col.${c+1}] ${box.name}`:`[col.${c+1}] Aggiungi scatola`}
-                    style={{
-                      width:54,minWidth:54,height:54,borderRadius:10,cursor:"pointer",flexShrink:0,
-                      border:isHL?`2px solid ${T.red}`:box?`1.5px solid ${p.border}`:`1.5px dashed ${T.borderHi}`,
-                      background:isHL?"#FEE2E2":box?p.bg:"white",
-                      display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
-                      position:"relative",transition:"all 0.12s",
-                      boxShadow:box?T.shadow:"none",
-                    }}
-                    onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=T.shadowMd;}}
-                    onMouseLeave={e=>{e.currentTarget.style.transform="";e.currentTarget.style.boxShadow=box?T.shadow:"none";}}>
-                    {box?(
-                      <>
-                        <span style={{fontSize:8,fontWeight:700,color:p.text,textAlign:"center",lineHeight:1.2,padding:"0 3px",wordBreak:"break-word",maxWidth:50}}>
-                          {box.name.length>9?box.name.slice(0,8)+"…":box.name}
-                        </span>
-                        {box.items.length>0&&<span style={{position:"absolute",top:3,right:4,fontSize:8,color:T.orange,fontWeight:700}}>{box.items.length}</span>}
-                      </>
-                    ):(
-                      <span style={{color:T.textMute,fontSize:22,lineHeight:1,fontWeight:200}}>+</span>
-                    )}
-                  </div>
+                  {(()=>{
+                    const isMoveSrc=moveSource===k;
+                    const isMoveMode=!!moveSource;
+                    const isValidDst=isMoveMode && !isMoveSrc;
+                    const slotBorder=isMoveSrc?`2px solid ${T.blue}`:
+                                     isHL?`2px solid ${T.red}`:
+                                     isValidDst&&!box?`1.5px dashed ${T.blue}`:
+                                     isValidDst&&box?`1.5px solid ${T.orange}`:
+                                     box?`1.5px solid ${p?.border}`:`1.5px dashed ${T.borderHi}`;
+                    const slotBg=isMoveSrc?T.blueLight:
+                                 isHL?"#FEE2E2":
+                                 isValidDst&&!box?"#EBF8FF":
+                                 isValidDst&&box?"#FFFAF0":
+                                 box?p?.bg:"white";
+                    return(
+                      <div key={c}
+                        onClick={()=>onSlot(k,wall,r,c)}
+                        title={isMoveSrc?"Clicca per annullare":isValidDst?"Sposta qui":box?`[col.${c+1}] ${box.name}`:`[col.${c+1}] Aggiungi scatola`}
+                        style={{
+                          width:54,minWidth:54,height:54,borderRadius:10,cursor:"pointer",flexShrink:0,
+                          border:slotBorder, background:slotBg,
+                          display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+                          position:"relative",transition:"all 0.12s",
+                          boxShadow:isMoveSrc?`0 0 0 3px ${T.blue}44`:box?T.shadow:"none",
+                        }}
+                        onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=isMoveSrc?`0 0 0 3px ${T.blue}44`:T.shadowMd;}}
+                        onMouseLeave={e=>{e.currentTarget.style.transform="";e.currentTarget.style.boxShadow=isMoveSrc?`0 0 0 3px ${T.blue}44`:box?T.shadow:"none";}}>
+                        {isMoveSrc&&(
+                          <span style={{position:"absolute",top:-8,left:"50%",transform:"translateX(-50%)",fontSize:9,background:T.blue,color:"white",borderRadius:6,padding:"1px 5px",whiteSpace:"nowrap",fontWeight:600}}>in mossa</span>
+                        )}
+                        {box?(
+                          <>
+                            <span style={{fontSize:8,fontWeight:700,color:p?.text,textAlign:"center",lineHeight:1.2,padding:"0 3px",wordBreak:"break-word",maxWidth:50}}>
+                              {box.name.length>9?box.name.slice(0,8)+"…":box.name}
+                            </span>
+                            {box.items.length>0&&<span style={{position:"absolute",top:3,right:4,fontSize:8,color:T.orange,fontWeight:700}}>{box.items.length}</span>}
+                            {!isMoveMode&&<button
+                              onClick={e=>{e.stopPropagation();onMoveStart(k);}}
+                              title="Sposta scatola"
+                              style={{position:"absolute",bottom:2,right:2,background:"none",border:"none",cursor:"pointer",fontSize:11,color:T.textMute,padding:0,lineHeight:1}}
+                              onMouseEnter={e=>{e.currentTarget.style.color=T.blue;}}
+                              onMouseLeave={e=>{e.currentTarget.style.color=T.textMute;}}>✥</button>}
+                          </>
+                        ):(
+                          <span style={{color:isMoveMode?T.blue:T.textMute,fontSize:isMoveMode?18:22,lineHeight:1,fontWeight:200}}>{isMoveMode?"→":"+"}</span>
+                        )}
+                      </div>
+                    );
+                  })()}
                 );
               })}
             </div>
@@ -565,6 +655,12 @@ function BoxModal({slotKey,wall,row,col,box,cfgW,onSave,onDelete,onClose,saving}
             style={{flex:1,padding:"11px",borderRadius:11,border:"none",background:name.trim()&&!saving?T.blue:"#CBD5E0",cursor:name.trim()&&!saving?"pointer":"not-allowed",fontSize:14,fontWeight:700,color:"white"}}>
             {saving?"Salvataggio…":"💾 Salva"}
           </button>
+          {box&&onMoveStart&&(
+            <button onClick={()=>onMoveStart(slotKey)} disabled={saving}
+              title="Sposta scatola"
+              style={{padding:"11px 14px",borderRadius:11,border:`1.5px solid ${T.blue}`,background:T.blueLight,cursor:"pointer",fontSize:14,color:T.blue}}
+              onMouseEnter={e=>{e.currentTarget.style.background="#BEE3F8";}} onMouseLeave={e=>{e.currentTarget.style.background=T.blueLight;}}>✥</button>
+          )}
           {box&&(
             <button onClick={()=>onDelete(slotKey)} disabled={saving}
               style={{padding:"11px 16px",borderRadius:11,border:`1.5px solid ${T.border}`,background:T.surfaceAlt,color:T.red}}
@@ -615,11 +711,67 @@ function CfgPanel({cfg,onApply,onClose,saving}){
   );
 }
 
+// ── LOST BOXES MODAL ─────────────────────────────────────────────────────────
+function LostBoxesModal({lostBoxes,onConfirm,onCancel,saving}){
+  const {lost,vals}=lostBoxes;
+  const byWall={};
+  lost.forEach(b=>{
+    if(!byWall[b.wall]) byWall[b.wall]=[];
+    byWall[b.wall].push(b);
+  });
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(26,32,44,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1100,padding:16,backdropFilter:"blur(4px)"}}>
+      <div style={{background:T.surface,borderRadius:20,padding:28,width:400,maxWidth:"100%",maxHeight:"85vh",overflowY:"auto",boxShadow:T.shadowLg,display:"flex",flexDirection:"column",gap:16}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <div style={{width:42,height:42,borderRadius:10,background:"#FFF5F5",border:`2px solid ${T.red}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>⚠️</div>
+          <div>
+            <div style={{fontSize:16,fontWeight:700,color:T.text}}>Attenzione</div>
+            <div style={{fontSize:12,color:T.textDim}}>Alcune scatole verranno eliminate</div>
+          </div>
+        </div>
+        <div style={{fontSize:13,color:T.textMid,background:"#FFF5F5",borderRadius:10,padding:"10px 14px",border:`1px solid #FCA5A5`}}>
+          Riducendo le dimensioni degli scaffali, <b>{lost.length} scatol{lost.length===1?"a":"e"}</b> si troverebbero fuori dal nuovo layout e verrebbero <b>eliminate definitivamente</b>:
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:200,overflowY:"auto"}}>
+          {Object.entries(byWall).map(([wall,bxs])=>(
+            <div key={wall}>
+              <div style={{fontSize:11,fontWeight:700,color:T.textDim,marginBottom:4}}>{WALL_META[wall]?.label}</div>
+              {bxs.map(b=>{
+                const rows=vals[wall]?.rows||3;
+                const ri=rows-1-b.r;
+                return(
+                  <div key={b.key} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",background:T.surfaceAlt,borderRadius:8,border:`1px solid ${T.border}`,marginBottom:4}}>
+                    <span style={{fontSize:14}}>📦</span>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:13,fontWeight:600,color:T.text}}>{b.name}</div>
+                      <div style={{fontSize:10,color:T.textMute,fontFamily:"monospace"}}>col.{b.c+1} · {b.r>=rows?"fuori range":ri===0?"Terra":"R"+ri}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+        <div style={{display:"flex",gap:8,marginTop:4}}>
+          <button onClick={onCancel}
+            style={{flex:1,padding:"10px",borderRadius:10,border:`1px solid ${T.border}`,background:T.surfaceAlt,cursor:"pointer",fontSize:13,fontWeight:600,color:T.textMid,fontFamily:"inherit"}}>
+            Annulla
+          </button>
+          <button onClick={onConfirm} disabled={saving}
+            style={{flex:1,padding:"10px",borderRadius:10,border:`1px solid ${T.red}`,background:"#FFF5F5",cursor:saving?"not-allowed":"pointer",fontSize:13,fontWeight:700,color:T.red,fontFamily:"inherit"}}>
+            {saving?"Eliminazione…":"Elimina e applica"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── TOAST ─────────────────────────────────────────────────────────────────────
 function Toast({msg,type}){
   if(!msg)return null;
-  const bg=type==="error"?"#FFF5F5":type==="ok"?"#F0FFF4":"#EBF4FF";
-  const border=type==="error"?T.red:type==="ok"?T.green:"#BEE3F8";
+  const bg=type==="error"?"#FFF5F5":type==="ok"?"#F0FFF4":type==="info"?"#EBF4FF":"#EBF4FF";
+  const border=type==="error"?T.red:type==="ok"?T.green:T.blue;
   const color=type==="error"?T.red:type==="ok"?"#276749":T.blueDark;
   return(
     <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:bg,border:`1px solid ${border}`,color,borderRadius:12,padding:"10px 20px",fontSize:13,fontWeight:600,boxShadow:T.shadowMd,zIndex:2000,whiteSpace:"nowrap"}}>
@@ -639,6 +791,8 @@ function App(){
   const [loaded,setLoaded]=useState(false);
   const [saving,setSaving]=useState(false);
   const [toast,setToast]=useState(null);
+  const [lostBoxes,setLostBoxes]=useState(null);
+  const [moveSource,setMoveSource]=useState(null); // key of box being moved
 
   function showToast(msg,type="ok"){
     setToast({msg,type});
@@ -680,15 +834,84 @@ function App(){
     setSaving(false);
   }
 
+  async function handleMoveBox(srcKey, dstKey, wall, r, c){
+    setSaving(true);
+    try{
+      const box=boxes[srcKey];
+      const [sw,sr,sc]=srcKey.split(":");
+      const next={...boxes};
+      delete next[srcKey];
+      next[dstKey]={...box};
+      await deleteBox(srcKey);
+      await upsertBox(dstKey, wall, parseInt(r), parseInt(c), box.name, box.items);
+      setBoxes(next);
+      showToast("✅ Scatola spostata");
+    }catch(e){showToast("Errore nello spostamento","error");}
+    setSaving(false);
+  }
+
+  async function handleSwapBoxes(keyA, keyB){
+    setSaving(true);
+    try{
+      const boxA=boxes[keyA], boxB=boxes[keyB];
+      const [wA,rA,cA]=keyA.split(":");
+      const [wB,rB,cB]=keyB.split(":");
+      const next={...boxes};
+      next[keyA]={...boxB};
+      next[keyB]={...boxA};
+      await upsertBox(keyA, wA, parseInt(rA), parseInt(cA), boxB.name, boxB.items);
+      await upsertBox(keyB, wB, parseInt(rB), parseInt(cB), boxA.name, boxA.items);
+      setBoxes(next);
+      showToast("🔄 Scatole scambiate");
+    }catch(e){showToast("Errore nello scambio","error");}
+    setSaving(false);
+  }
+
   async function handleApplyCfg(vals){
+    // Check for boxes that would be lost due to reduction
+    const lost=[];
+    ["fondo","left","right"].forEach(w=>{
+      const newCols=vals[w].cols, newRows=vals[w].rows;
+      const oldCols=cfg[w].cols, oldRows=cfg[w].rows;
+      Object.entries(boxes).forEach(([k,box])=>{
+        const [wall,r,c]=k.split(":");
+        if(wall!==w) return;
+        const ri=parseInt(r), ci=parseInt(c);
+        if(ri>=newRows || ci>=newCols){
+          lost.push({key:k, name:box.name, wall:w, r:ri, c:ci});
+        }
+      });
+    });
+    if(lost.length>0){
+      setLostBoxes({lost, vals});
+      return;
+    }
+    await doApplyCfg(vals);
+  }
+
+  async function doApplyCfg(vals){
     setSaving(true);
     try{
       await Promise.all(["fondo","left","right"].map(w=>updateCfg(w,vals[w].cols,vals[w].rows)));
       setCfg(vals);
       setShowCfg(false);
+      setLostBoxes(null);
       showToast("✅ Scaffali aggiornati");
     }catch(e){showToast("Errore nel salvataggio configurazione","error");}
     setSaving(false);
+  }
+
+  async function confirmApplyCfg(){
+    if(!lostBoxes) return;
+    // Delete lost boxes from DB
+    setSaving(true);
+    try{
+      await Promise.all(lostBoxes.lost.map(b=>deleteBox(b.key)));
+      const next={...boxes};
+      lostBoxes.lost.forEach(b=>delete next[b.key]);
+      setBoxes(next);
+      await doApplyCfg(lostBoxes.vals);
+    }catch(e){showToast("Errore nell'eliminazione","error");setSaving(false);}
   }
 
   // search
@@ -808,7 +1031,29 @@ function App(){
               </span>
             </div>
             <WallGrid wall={view} cfgW={cfg[view]} boxes={boxes} searchKeys={searchKeys}
-              onSlot={(k,wall,r,c)=>setModal({key:k,wall,row:r,col:c})}/>
+              moveSource={moveSource}
+              onSlot={(k,wall,r,c)=>{
+                if(moveSource){
+                  // moving mode: if click same box → cancel, else move
+                  if(moveSource===k){ setMoveSource(null); return; }
+                  if(boxes[k] && moveSource!==k){
+                    // destination occupied — swap
+                    handleSwapBoxes(moveSource, k);
+                  } else {
+                    handleMoveBox(moveSource, k, wall, r, c);
+                  }
+                  setMoveSource(null);
+                } else {
+                  if(boxes[k]){
+                    // show action: move or edit
+                    setModal({key:k,wall,row:r,col:c});
+                  } else {
+                    setModal({key:k,wall,row:r,col:c});
+                  }
+                }
+              }}
+              onMoveStart={(k)=>{ setMoveSource(k); showToast("📦 Seleziona la posizione di destinazione","info"); }}
+            />
           </div>
         )}
       </div>
@@ -835,7 +1080,20 @@ function App(){
       {modal&&(
         <BoxModal slotKey={modal.key} wall={modal.wall} row={modal.row} col={modal.col}
           box={modalBox} cfgW={cfg[modal.wall]} saving={saving}
-          onSave={handleSaveBox} onDelete={handleDeleteBox} onClose={()=>setModal(null)}/>
+          onSave={handleSaveBox} onDelete={handleDeleteBox} onClose={()=>setModal(null)}
+          onMoveStart={(k)=>{ setModal(null); setMoveSource(k); showToast("📦 Seleziona la posizione di destinazione","info"); }}
+        />
+      )}
+      {lostBoxes&&(
+        <LostBoxesModal lostBoxes={lostBoxes} saving={saving}
+          onConfirm={confirmApplyCfg}
+          onCancel={()=>setLostBoxes(null)}/>
+      )}
+      {moveSource&&(
+        <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:T.blue,color:"white",borderRadius:12,padding:"10px 20px",fontSize:13,fontWeight:600,boxShadow:T.shadowMd,zIndex:2000,display:"flex",alignItems:"center",gap:10}}>
+          <span>📦 Seleziona destinazione</span>
+          <button onClick={()=>setMoveSource(null)} style={{background:"rgba(255,255,255,0.2)",border:"none",cursor:"pointer",color:"white",borderRadius:8,padding:"3px 10px",fontSize:12,fontFamily:"inherit"}}>✕ Annulla</button>
+        </div>
       )}
       <Toast msg={toast?.msg} type={toast?.type}/>
     </div>
