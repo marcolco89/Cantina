@@ -680,6 +680,69 @@ function Toast({msg,type}){
   );
 }
 
+// ── LIST VIEW ─────────────────────────────────────────────────────────────────
+function ListView({boxes,cfg}){
+  const [filter,setFilter]=useState("");
+  const items=[];
+  Object.entries(boxes).forEach(([key,box])=>{
+    const [wall,r,c]=key.split(":");
+    const rows=cfg[wall]?.rows||3;
+    const ri=rows-1-parseInt(r);
+    const loc=`${WALL_META[wall]?.label}, ${ri===0?"Terra":"R"+ri}, col.${parseInt(c)+1}`;
+    (box.items||[]).forEach(item=>{
+      items.push({item,boxName:box.name,loc});
+    });
+    if((box.items||[]).length===0){
+      items.push({item:"—",boxName:box.name,loc,emptyBox:true});
+    }
+  });
+  items.sort((a,b)=>a.item.localeCompare(b.item,"it"));
+  const filtered=filter.trim()?items.filter(i=>i.item.toLowerCase().includes(filter.toLowerCase())||i.boxName.toLowerCase().includes(filter.toLowerCase())):items;
+  const letters={};
+  filtered.forEach(i=>{
+    const l=(i.item==="—"||!i.item)?"#":i.item[0].toUpperCase();
+    if(!letters[l]) letters[l]=[];
+    letters[l].push(i);
+  });
+  if(Object.keys(boxes).length===0) return(
+    <div style={{padding:32,textAlign:"center",color:T.textMute,fontSize:14}}>
+      <div style={{fontSize:40,marginBottom:12}}>📦</div>
+      Nessun oggetto ancora catalogato.
+    </div>
+  );
+  return(
+    <div style={{padding:12}}>
+      <div style={{position:"relative",marginBottom:10}}>
+        <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:T.textMute,fontSize:13}}>🔍</span>
+        <input value={filter} onChange={e=>setFilter(e.target.value)} placeholder="Filtra oggetti o scatole…"
+          style={{width:"100%",padding:"8px 12px 8px 32px",border:`1.5px solid ${T.border}`,borderRadius:9,fontSize:13,background:T.bg,color:T.text,fontFamily:"inherit",outline:"none"}}
+          onFocus={e=>e.target.style.borderColor=T.blue} onBlur={e=>e.target.style.borderColor=T.border}/>
+        {filter&&<button onClick={()=>setFilter("")} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:T.textMute,fontSize:16}}>×</button>}
+      </div>
+      <div style={{fontSize:11,color:T.textDim,marginBottom:8,fontWeight:600}}>
+        {filtered.length} oggett{filtered.length===1?"o":"i"} {filter?"trovati":"totali"}
+      </div>
+      {Object.entries(letters).sort(([a],[b])=>a.localeCompare(b,"it")).map(([letter,its])=>(
+        <div key={letter} style={{marginBottom:14}}>
+          <div style={{fontSize:11,fontWeight:800,color:T.orange,letterSpacing:"0.08em",marginBottom:5,paddingLeft:8,borderLeft:`3px solid ${T.orange}`}}>
+            {letter}
+          </div>
+          {its.map((i,idx)=>(
+            <div key={idx} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 10px",background:i.emptyBox?T.surfaceAlt:T.surface,borderRadius:9,marginBottom:3,border:`1px solid ${T.border}`,opacity:i.emptyBox?0.6:1}}>
+              <span style={{fontSize:12}}>{i.emptyBox?"📦":"·"}</span>
+              <span style={{flex:1,fontSize:13,color:i.emptyBox?T.textDim:T.text,fontWeight:i.emptyBox?400:500}}>{i.emptyBox?"(scatola vuota)":i.item}</span>
+              <div style={{textAlign:"right",flexShrink:0}}>
+                <div style={{fontSize:11,fontWeight:600,color:T.textMid}}>{i.boxName}</div>
+                <div style={{fontSize:10,color:T.textMute,fontFamily:"monospace"}}>{i.loc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── MAIN APP ──────────────────────────────────────────────────────────────────
 function App(){
   const [boxes,setBoxes]=useState({});
@@ -693,6 +756,7 @@ function App(){
   const [toast,setToast]=useState(null);
   const [lostBoxes,setLostBoxes]=useState(null);
   const [moveSource,setMoveSource]=useState(null); // key of box being moved
+  // ListView uses its own internal state
 
   function showToast(msg,type="ok"){
     setToast({msg,type});
@@ -902,22 +966,25 @@ function App(){
       {/* WALL TABS */}
       {view!=="3d"&&(
         <div style={{display:"flex",gap:6,marginBottom:10}}>
-          {["left","fondo","right"].map(w=>{
+          {["left","fondo","right","lista"].map(w=>{
             const active=view===w;
+            const lbl=w==="lista"?"📋 Lista":WALL_META[w]?.label.split(" ").slice(1).join(" ");
             return(
               <button key={w} onClick={()=>setView(w)}
-                style={{flex:1,padding:"8px 10px",borderRadius:10,border:`1.5px solid ${active?T.blue:T.border}`,background:active?T.blue:T.surface,fontSize:12,fontWeight:active?700:500,color:active?"white":T.textMid,transition:"all 0.15s"}}>
-                {WALL_META[w].label.split(" ").slice(1).join(" ")}
+                style={{flex:1,padding:"8px 6px",borderRadius:10,border:`1.5px solid ${active?T.blue:T.border}`,background:active?T.blue:T.surface,fontSize:11,fontWeight:active?700:500,color:active?"white":T.textMid,transition:"all 0.15s"}}>
+                {lbl}
               </button>
             );
           })}
         </div>
       )}
 
-      {/* MAIN */}
+      {/* MAIN CONTENT */}
       <div style={{background:T.surface,borderRadius:16,overflow:"hidden",boxShadow:T.shadow,border:`1px solid ${T.border}`}}>
         {view==="3d"?(
           <Scene3D boxes={boxes} cfg={cfg} onWall={w=>setView(w)}/>
+        ):view==="lista"?(
+          <ListView boxes={boxes} cfg={cfg}/>
         ):(
           <div style={{padding:16}}>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,padding:"8px 12px",background:T.surfaceAlt,borderRadius:10,border:`1px solid ${T.border}`}}>
@@ -925,7 +992,7 @@ function App(){
               <span style={{fontSize:13,fontWeight:700,color:T.text}}>{WALL_META[view]?.label}</span>
               <span style={{fontSize:11,color:T.textDim}}>{WALL_META[view]?.dim}</span>
               <span style={{flex:1}}/>
-              <span style={{fontSize:11,color:T.textDim,fontFamily:"monospace"}}>{cfg[view].cols} col × {cfg[view].rows} ripiani</span>
+              <span style={{fontSize:11,color:T.textDim,fontFamily:"monospace"}}>{cfg[view]?.cols} col × {cfg[view]?.rows} ripiani</span>
               <span style={{padding:"2px 10px",background:T.orange,color:"white",borderRadius:20,fontSize:11,fontWeight:700}}>
                 {Object.keys(boxes).filter(k=>k.startsWith(view+":")).length} scatole
               </span>
@@ -934,25 +1001,15 @@ function App(){
               moveSource={moveSource}
               onSlot={(k,wall,r,c)=>{
                 if(moveSource){
-                  // moving mode: if click same box → cancel, else move
-                  if(moveSource===k){ setMoveSource(null); return; }
-                  if(boxes[k] && moveSource!==k){
-                    // destination occupied — swap
-                    handleSwapBoxes(moveSource, k);
-                  } else {
-                    handleMoveBox(moveSource, k, wall, r, c);
-                  }
+                  if(moveSource===k){setMoveSource(null);return;}
+                  if(boxes[k]){handleSwapBoxes(moveSource,k);}
+                  else{handleMoveBox(moveSource,k,wall,r,c);}
                   setMoveSource(null);
-                } else {
-                  if(boxes[k]){
-                    // show action: move or edit
-                    setModal({key:k,wall,row:r,col:c});
-                  } else {
-                    setModal({key:k,wall,row:r,col:c});
-                  }
+                }else{
+                  setModal({key:k,wall,row:r,col:c});
                 }
               }}
-              onMoveStart={(k)=>{ setMoveSource(k); showToast("📦 Seleziona la posizione di destinazione","info"); }}
+              onMoveStart={(k)=>{setMoveSource(k);showToast("📦 Seleziona la posizione di destinazione","info");}}
             />
           </div>
         )}
@@ -965,7 +1022,7 @@ function App(){
             const n=Object.keys(boxes).filter(k=>k.startsWith(w+":")).length;
             return(
               <button key={w} onClick={()=>setView(w)}
-                style={{padding:"12px 8px",borderRadius:12,border:`1.5px solid ${T.border}`,background:T.surface,display:"flex",flexDirection:"column",alignItems:"center",gap:4,boxShadow:T.shadow,transition:"all 0.15s",fontFamily:"inherit"}}
+                style={{padding:"12px 8px",borderRadius:12,border:`1.5px solid ${T.border}`,background:T.surface,display:"flex",flexDirection:"column",alignItems:"center",gap:4,boxShadow:T.shadow,transition:"all 0.15s",fontFamily:"inherit",cursor:"pointer"}}
                 onMouseEnter={e=>{e.currentTarget.style.borderColor=T.blue;e.currentTarget.style.boxShadow=T.shadowMd;e.currentTarget.style.transform="translateY(-2px)";}}
                 onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.boxShadow=T.shadow;e.currentTarget.style.transform="";}}>
                 <span style={{fontSize:20,fontWeight:800,color:n>0?T.orange:T.textMute}}>{n}</span>
@@ -974,6 +1031,23 @@ function App(){
               </button>
             );
           })}
+        </div>
+      )}
+
+      {/* LISTA BUTTON */}
+      {view==="3d"&&(
+        <button onClick={()=>setView("lista")}
+          style={{width:"100%",marginTop:8,padding:"9px",borderRadius:10,border:`1.5px solid ${T.border}`,background:T.surface,cursor:"pointer",fontSize:12,fontWeight:600,color:T.textMid,display:"flex",alignItems:"center",justifyContent:"center",gap:6,boxShadow:T.shadow,fontFamily:"inherit"}}
+          onMouseEnter={e=>{e.currentTarget.style.borderColor=T.blue;e.currentTarget.style.color=T.blue;}}
+          onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.color=T.textMid;}}>
+          📋 Vedi lista completa oggetti
+        </button>
+      )}
+
+      {moveSource&&(
+        <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:T.blue,color:"white",borderRadius:12,padding:"10px 20px",fontSize:13,fontWeight:600,boxShadow:T.shadowMd,zIndex:2000,display:"flex",alignItems:"center",gap:10}}>
+          <span>📦 Seleziona destinazione</span>
+          <button onClick={()=>setMoveSource(null)} style={{background:"rgba(255,255,255,0.2)",border:"none",cursor:"pointer",color:"white",borderRadius:8,padding:"3px 10px",fontSize:12,fontFamily:"inherit"}}>✕ Annulla</button>
         </div>
       )}
 
